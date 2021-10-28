@@ -35,7 +35,7 @@ export default [
     ...baseConfig,
     output: {
       ...baseConfig.output,
-      format: "cjs",
+      format: "esm",
     },
     plugins: [...baseConfig.plugins, multiInput()],
   },

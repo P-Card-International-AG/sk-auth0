@@ -1,71 +1,34 @@
-import type { GetSession, RequestHandler } from "@sveltejs/kit";
-import type { EndpointOutput, ServerRequest } from "@sveltejs/kit/types/endpoint";
-import type { Headers } from "@sveltejs/kit/types/helper";
-import cookie from "cookie";
-import * as jsonwebtoken from "jsonwebtoken";
-import type { JWT, Session } from "./interfaces";
+import type { RequestHandler } from "@sveltejs/kit";
+import type { EndpointOutput } from "@sveltejs/kit/types/endpoint";
+import type { ServerRequest } from "@sveltejs/kit/types/hooks";
 import { join } from "./path";
 import type { Provider } from "./providers";
+import cookie from "cookie";
 
 interface AuthConfig {
   providers: Provider[];
   callbacks?: AuthCallbacks;
-  jwtSecret?: string;
-  jwtExpiresIn?: string | number;
   host?: string;
   basePath?: string;
 }
 
 interface AuthCallbacks {
   signIn?: () => boolean | Promise<boolean>;
-  jwt?: (token: JWT, profile?: any) => JWT | Promise<JWT>;
-  session?: (token: JWT, session: Session) => Session | Promise<Session>;
   redirect?: (url: string) => string | Promise<string>;
 }
+
+const idTokenCookieName = "svelteauth_id_token";
+const refreshTokenCookieName = "svelteauth_refresh_token";
+const expiresAtCookieName = "svelteauth_expires_at";
+const providerCookieName = "svelteauth_provider";
+
+const maxAge = 60 * 60 * 24 * 30;
 
 export class Auth {
   constructor(private readonly config?: AuthConfig) {}
 
   get basePath() {
     return this.config?.basePath ?? "/api/auth";
-  }
-
-  getJwtSecret() {
-    if (this.config?.jwtSecret) {
-      return this.config?.jwtSecret;
-    }
-
-    if (this.config?.providers?.length) {
-      const provs = this.config?.providers?.map((provider) => provider.id).join("+");
-      return Buffer.from(provs).toString("base64");
-    }
-
-    return "svelte_auth_secret";
-  }
-
-  async getToken(headers: Headers) {
-    if (!headers.cookie) {
-      return null;
-    }
-
-    const cookies = cookie.parse(headers.cookie);
-
-    if (!cookies.svelteauthjwt) {
-      return null;
-    }
-
-    let token: JWT;
-    try {
-      token = (jsonwebtoken.verify(cookies.svelteauthjwt, this.getJwtSecret()) || {}) as JWT;
-    } catch {
-      return null;
-    }
-
-    if (this.config?.callbacks?.jwt) {
-      token = await this.config.callbacks.jwt(token);
-    }
-
-    return token;
   }
 
   getBaseUrl(host?: string) {
@@ -82,89 +45,30 @@ export class Auth {
     return new URL(pathname, this.getBaseUrl(host)).href;
   }
 
-  setToken(headers: Headers, newToken: JWT | any) {
-    const originalToken = this.getToken(headers);
+  async isSignedIn({ headers }: ServerRequest): Promise<boolean> {
+    const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? "");
 
-    return {
-      ...(originalToken ?? {}),
-      ...newToken,
-    };
+    return idToken != null;
   }
 
-  signToken(token: JWT) {
-    const opts = !token.exp
-      ? {
-          expiresIn: this.config?.jwtExpiresIn ?? "30d",
-        }
-      : {};
-    const jwt = jsonwebtoken.sign(token, this.getJwtSecret(), opts);
-    return jwt;
-  }
-
-  async getRedirectUrl(host: string, redirectUrl?: string) {
-    let redirect = redirectUrl || this.getBaseUrl(host);
+  async getRedirectUrl(redirectUrl?: string) {
+    let redirect = redirectUrl ?? "/";
     if (this.config?.callbacks?.redirect) {
       redirect = await this.config.callbacks.redirect(redirect);
     }
     return redirect;
   }
 
-  async handleProviderCallback(
-    request: ServerRequest,
-    provider: Provider,
-  ): Promise<EndpointOutput> {
-    const { headers, host } = request;
-    const [profile, redirectUrl] = await provider.callback(request, this);
-
-    let token = (await this.getToken(headers)) ?? { user: {} };
-    if (this.config?.callbacks?.jwt) {
-      token = await this.config.callbacks.jwt(token, profile);
-    } else {
-      token = this.setToken(headers, { user: profile });
-    }
-
-    const jwt = this.signToken(token);
-    const redirect = await this.getRedirectUrl(host, redirectUrl ?? undefined);
-
-    return {
-      status: 302,
-      headers: {
-        "set-cookie": `svelteauthjwt=${jwt}; Path=/; HttpOnly`,
-        Location: redirect,
-      },
-    };
-  }
-
   async handleEndpoint(request: ServerRequest): Promise<EndpointOutput> {
-    const { path, headers, method, host } = request;
+    const { path } = request;
 
     if (path === this.getPath("signout")) {
-      const token = this.setToken(headers, {});
-      const jwt = this.signToken(token);
-
-      if (method === "POST") {
-        return {
-          headers: {
-            "set-cookie": `svelteauthjwt=${jwt}; Path=/; HttpOnly`,
-          },
-          body: {
-            signout: true,
-          },
-        };
-      }
-
-      const redirect = await this.getRedirectUrl(host);
-
-      return {
-        status: 302,
-        headers: {
-          "set-cookie": `svelteauthjwt=${jwt}; Path=/; HttpOnly`,
-          Location: redirect,
-        },
-      };
+      return await this.handleSignout(request);
     }
 
-    const regex = new RegExp(join([this.basePath, `(?<method>signin|callback)/(?<provider>\\w+)`]));
+    const regex = new RegExp(
+      join([this.basePath, `(?<method>signin|refresh|callback)/(?<provider>\\w+)`]),
+    );
     const match = path.match(regex);
 
     if (match && match.groups) {
@@ -174,6 +78,8 @@ export class Auth {
       if (provider) {
         if (match.groups.method === "signin") {
           return await provider.signin(request, this);
+        } else if (match.groups.method === "refresh") {
+          return await this.handleRefresh(request, provider);
         } else {
           return await this.handleProviderCallback(request, provider);
         }
@@ -186,20 +92,77 @@ export class Auth {
     };
   }
 
-  get: RequestHandler = async (request) => {
-    const { path } = request;
-
-    if (path === this.getPath("csrf")) {
-      return { body: "1234" }; // TODO: Generate real token
-    } else if (path === this.getPath("session")) {
-      const session = await this.getSession(request);
+  async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
+    const { method } = request;
+    if (method === "POST") {
       return {
+        headers: {
+          "set-cookie": this.getDeleteCookieHeaders(),
+        },
         body: {
-          session,
+          signout: true,
         },
       };
     }
 
+    const redirect = await this.getRedirectUrl();
+
+    return {
+      status: 302,
+      headers: {
+        "set-cookie": this.getDeleteCookieHeaders(),
+        Location: redirect,
+      },
+    };
+  }
+
+  async handleProviderCallback(
+    request: ServerRequest,
+    provider: Provider,
+  ): Promise<EndpointOutput> {
+    const { idToken, refreshToken, redirectUrl, expiresAt } = await provider.callback(
+      request,
+      this,
+    );
+    const redirect = await this.getRedirectUrl(redirectUrl);
+
+    return {
+      status: 302,
+      headers: {
+        "set-cookie": this.getSetCookieHeaders(provider, idToken, refreshToken, expiresAt),
+        Location: redirect,
+      },
+    };
+  }
+
+  async handleRefresh(request: ServerRequest, provider: Provider): Promise<EndpointOutput> {
+    const { headers, query } = request;
+    const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(headers.cookie);
+    const {
+      idToken: newIdToken,
+      refreshToken: newRefreshToken,
+      expiresAt,
+    } = await provider.refresh(oldRefreshToken, this);
+    if (request.method === "GET") {
+      const redirect = await this.getRedirectUrl(query.get("redirect") ?? undefined);
+      return {
+        status: 302,
+        headers: {
+          "set-cookie": this.getSetCookieHeaders(provider, newIdToken, newRefreshToken, expiresAt),
+          Location: redirect,
+        },
+      };
+    } else {
+      return {
+        status: 200,
+        headers: {
+          "set-cookie": this.getSetCookieHeaders(provider, newIdToken, newRefreshToken, expiresAt),
+        },
+      };
+    }
+  }
+
+  get: RequestHandler = async (request) => {
     return await this.handleEndpoint(request);
   };
 
@@ -207,17 +170,82 @@ export class Auth {
     return await this.handleEndpoint(request);
   };
 
-  getSession: GetSession = async ({ headers }) => {
-    const token = await this.getToken(headers);
+  private getSetCookieHeaders(
+    provider: Provider,
+    idToken: string,
+    refreshToken: string,
+    expiresAt: number,
+  ): string[] {
+    return [
+      cookie.serialize(idTokenCookieName, idToken, this.getIdTokenCookieSettings()),
+      cookie.serialize(refreshTokenCookieName, refreshToken, {
+        ...this.getRefreshTokenCookieSettings(),
+        path: `${this.basePath}${provider.getRefreshPath()}`,
+      }),
+      cookie.serialize(
+        expiresAtCookieName,
+        expiresAt.toString(),
+        this.getExpiresAtCookieSettings(),
+      ),
+      cookie.serialize(providerCookieName, provider.id, this.getProviderCookieSettings()),
+    ];
+  }
 
-    if (token) {
-      if (this.config?.callbacks?.session) {
-        return await this.config.callbacks.session(token, { user: token.user });
-      }
+  private getDeleteCookieHeaders() {
+    return [
+      cookie.serialize(idTokenCookieName, "", {
+        ...this.getIdTokenCookieSettings(),
+        expires: new Date(1970, 1, 1, 0, 0, 0, 0),
+      }),
+      cookie.serialize(refreshTokenCookieName, "", {
+        ...this.getRefreshTokenCookieSettings(),
+        expires: new Date(1970, 1, 1, 0, 0, 0, 0),
+      }),
+      cookie.serialize(expiresAtCookieName, "", {
+        ...this.getExpiresAtCookieSettings(),
+        expires: new Date(1970, 1, 1, 0, 0, 0, 0),
+      }),
+      cookie.serialize(providerCookieName, "", {
+        ...this.getProviderCookieSettings(),
+        expires: new Date(1970, 1, 1, 0, 0, 0, 0),
+      }),
+    ];
+  }
 
-      return { user: token.user };
-    }
+  private getIdTokenCookieSettings(): cookie.CookieSerializeOptions {
+    return {
+      httpOnly: true,
+      path: "/",
+      sameSite: "strict",
+      secure: true,
+      maxAge,
+    };
+  }
 
-    return {};
-  };
+  private getRefreshTokenCookieSettings(): cookie.CookieSerializeOptions {
+    return {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+      maxAge,
+    };
+  }
+
+  private getExpiresAtCookieSettings(): cookie.CookieSerializeOptions {
+    return {
+      path: "/",
+      sameSite: "strict",
+      secure: true,
+      maxAge,
+    };
+  }
+
+  private getProviderCookieSettings(): cookie.CookieSerializeOptions {
+    return {
+      path: "/",
+      sameSite: "strict",
+      secure: true,
+      maxAge,
+    };
+  }
 }

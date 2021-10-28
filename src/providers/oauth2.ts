@@ -1,10 +1,11 @@
-import type { ServerRequest } from "@sveltejs/kit/types/endpoint";
+import type { ServerRequest } from "@sveltejs/kit/types/hooks";
+import { RefreshResult } from "src/types";
 import type { Auth } from "../auth";
 import { ucFirst } from "../helpers";
-import { OAuth2BaseProvider, OAuth2BaseProviderConfig, OAuth2Tokens } from "./oauth2.base";
+import { ProviderConfig } from "./base";
+import { OAuth2BaseProvider, OAuth2Tokens } from "./oauth2.base";
 
-export interface OAuth2ProviderConfig<ProfileType = any, TokensType extends OAuth2Tokens = any>
-  extends OAuth2BaseProviderConfig<ProfileType, TokensType> {
+export interface OAuth2ProviderConfig extends ProviderConfig {
   accessTokenUrl?: string;
   authorizationUrl?: string;
   profileUrl?: string;
@@ -28,8 +29,8 @@ const defaultConfig: Partial<OAuth2ProviderConfig> = {
 export class OAuth2Provider<
   ProfileType = any,
   TokensType extends OAuth2Tokens = OAuth2Tokens,
-  ConfigType extends OAuth2ProviderConfig = OAuth2ProviderConfig<ProfileType, TokensType>,
-> extends OAuth2BaseProvider<ProfileType, TokensType, ConfigType> {
+  ConfigType extends OAuth2ProviderConfig = OAuth2ProviderConfig,
+> extends OAuth2BaseProvider<TokensType, ConfigType> {
   constructor(config: ConfigType) {
     super({
       ...defaultConfig,
@@ -85,8 +86,12 @@ export class OAuth2Provider<
 
   async getUserProfile(tokens: TokensType): Promise<ProfileType> {
     const res = await fetch(this.config.profileUrl!, {
-      headers: { Authorization: `${ucFirst(tokens.token_type)} ${tokens.access_token}` },
+      headers: { Authorization: `${ucFirst(tokens.token_type)} ${tokens.id_token}` },
     });
     return await res.json();
+  }
+
+  refresh(refreshToken: string, svelteKitAuth: Auth): RefreshResult | Promise<RefreshResult> {
+    throw new Error("Method not implemented.");
   }
 }
