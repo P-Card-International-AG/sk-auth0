@@ -2,7 +2,12 @@ import Cookies from "js-cookie";
 
 export async function ensureTokenRefreshed(
   fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
+  isBrowser: boolean
 ): Promise<void> {
+  if (!isBrowser) {
+    return;
+  }
+
   const expiresAtString = Cookies.get("svelteauth_expires_at");
   const provider = Cookies.get("svelteauth_provider");
   if (expiresAtString == null || provider == null) {
