@@ -7,20 +7,13 @@ stages:
   - build
   - deploy
 
-install:
-  stage: build
-  image: node:latest
-  script: yarn install
-
-lint:
-  stage: build
-  image: node:latest
-  script: yarn lint
-
 build:
   stage: build
   image: node:latest
-  script: yarn build
+  script:
+    - yarn install
+    - yarn lint
+    - yarn build
 
 publish:
   image: node:latest
