@@ -5,4 +5,4 @@ export type CallbackResult = {
   redirectUrl?: string;
   expiresAt: number;
 };
-export type RefreshResult = { idToken: string; refreshToken: string; expiresAt: number };
+export type RefreshResult = { idToken: string; refreshToken?: string; expiresAt: number };

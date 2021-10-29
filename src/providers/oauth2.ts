@@ -1,8 +1,8 @@
 import type { ServerRequest } from "@sveltejs/kit/types/hooks";
-import { RefreshResult } from "src/types";
 import type { Auth } from "../auth";
 import { ucFirst } from "../helpers";
 import { ProviderConfig } from "./base";
+import { RefreshTokenExpiredError } from "./errors";
 import { OAuth2BaseProvider, OAuth2Tokens } from "./oauth2.base";
 
 export interface OAuth2ProviderConfig extends ProviderConfig {
@@ -91,7 +91,40 @@ export class OAuth2Provider<
     return await res.json();
   }
 
-  refresh(refreshToken: string, svelteKitAuth: Auth): RefreshResult | Promise<RefreshResult> {
-    throw new Error("Method not implemented.");
+  override async getTokensForRefresh(refreshToken: string): Promise<TokensType> {
+    const data: Record<string, any> = {
+      grant_type: "refresh_token",
+      client_id: this.config.clientId,
+      client_secret: this.config.clientSecret,
+      refresh_token: refreshToken,
+      ...(this.config.params ?? {}),
+    };
+
+    let body: string;
+    if (this.config.contentType === "application/x-www-form-urlencoded") {
+      body = Object.entries(data)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join("&");
+    } else {
+      body = JSON.stringify(data);
+    }
+
+    const res = await fetch(this.config.accessTokenUrl!, {
+      body,
+      method: "POST",
+      headers: {
+        "Content-Type": this.config.contentType,
+        ...(this.config.headers ?? {}),
+      },
+    });
+
+    if (res.status === 403) {
+      throw new RefreshTokenExpiredError();
+    }
+    if (!res.ok) {
+      throw new Error("Something went wrong while refreshing the tokens: " + await res.text())
+    }
+
+    return await res.json();
   }
 }

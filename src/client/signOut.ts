@@ -1,15 +1,20 @@
-/* import { session as session$ } from "$app/stores"; */
+interface SignOutConfig {
+  redirectUrl?: string;
+}
 
-export async function signOut() {
-  let res = await fetch("/api/auth/signout", { method: "POST" });
-  const { signout } = await res.json();
-
-  if (!signout) {
-    throw new Error("Sign out not successful!");
+export function signOut(config?: SignOutConfig) {
+  let redirectUrl: string | undefined;
+  if (config?.redirectUrl) {
+    redirectUrl = config.redirectUrl;
+  } else {
+    redirectUrl = window.location.pathname + window.location.search + window.location.hash;
   }
 
-  res = await fetch("/api/auth/session");
-  const session = await res.json();
+  const queryData = {
+    redirect: redirectUrl,
+  };
+  const query = new URLSearchParams(queryData);
+  const path = `/api/auth/signout?${query}`;
 
-  return session;
+  window.location.href = path;
 }

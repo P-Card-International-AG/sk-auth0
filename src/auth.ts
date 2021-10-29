@@ -4,6 +4,7 @@ import type { ServerRequest } from "@sveltejs/kit/types/hooks";
 import { join } from "./path";
 import type { Provider } from "./providers";
 import cookie from "cookie";
+import { RefreshTokenExpiredError } from "./providers/errors";
 
 interface AuthConfig {
   providers: Provider[];
@@ -36,7 +37,7 @@ export class Auth {
       secure: true,
       basePath: "/api/auth",
       providers: [],
-      ...config
+      ...config,
     };
   }
 
@@ -119,7 +120,7 @@ export class Auth {
       };
     }
 
-    const redirect = await this.getRedirectUrl();
+    const redirect = await this.getRedirectUrl(request.query.get("redirect") ?? undefined);
 
     return {
       status: 302,
@@ -152,27 +153,61 @@ export class Auth {
   async handleRefresh(request: ServerRequest, provider: Provider): Promise<EndpointOutput> {
     const { headers, query } = request;
     const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(headers.cookie);
-    const {
-      idToken: newIdToken,
-      refreshToken: newRefreshToken,
-      expiresAt,
-    } = await provider.refresh(oldRefreshToken, this);
-    if (request.method === "GET") {
-      const redirect = await this.getRedirectUrl(query.get("redirect") ?? undefined);
-      return {
-        status: 302,
-        headers: {
-          "set-cookie": this.getSetCookieHeaders(provider, newIdToken, newRefreshToken, expiresAt),
-          Location: redirect,
-        },
-      };
-    } else {
-      return {
-        status: 200,
-        headers: {
-          "set-cookie": this.getSetCookieHeaders(provider, newIdToken, newRefreshToken, expiresAt),
-        },
-      };
+    try {
+      const {
+        idToken: newIdToken,
+        refreshToken: newRefreshToken,
+        expiresAt,
+      } = await provider.refresh(oldRefreshToken, this);
+      if (request.method === "GET") {
+        const redirect = await this.getRedirectUrl(query.get("redirect") ?? undefined);
+        return {
+          status: 302,
+          headers: {
+            "set-cookie": this.getSetCookieHeaders(
+              provider,
+              newIdToken,
+              newRefreshToken,
+              expiresAt,
+            ),
+            Location: redirect,
+          },
+        };
+      } else {
+        return {
+          status: 200,
+          headers: {
+            "set-cookie": this.getSetCookieHeaders(
+              provider,
+              newIdToken,
+              newRefreshToken,
+              expiresAt,
+            ),
+          },
+        };
+      }
+    } catch (error) {
+      if (error instanceof RefreshTokenExpiredError) {
+        if (request.method === "GET") {
+          const redirect = await this.getRedirectUrl(query.get("redirect") ?? undefined);
+          return {
+            status: 302,
+            headers: {
+              "set-cookie": this.getDeleteCookieHeaders(),
+              Location: redirect,
+            },
+          };
+        } else {
+          return {
+            status: 403,
+            headers: {
+              "set-cookie": this.getDeleteCookieHeaders(),
+            },
+          };
+        }
+      } else {
+        throw error;
+      }
     }
   }
 
@@ -187,15 +222,11 @@ export class Auth {
   private getSetCookieHeaders(
     provider: Provider,
     idToken: string,
-    refreshToken: string,
+    refreshToken: string | undefined,
     expiresAt: number,
   ): string[] {
-    return [
+    const cookies = [
       cookie.serialize(idTokenCookieName, idToken, this.getIdTokenCookieSettings()),
-      cookie.serialize(refreshTokenCookieName, refreshToken, {
-        ...this.getRefreshTokenCookieSettings(),
-        path: `${this.config.basePath}${provider.getRefreshPath()}`,
-      }),
       cookie.serialize(
         expiresAtCookieName,
         expiresAt.toString(),
@@ -203,24 +234,39 @@ export class Auth {
       ),
       cookie.serialize(providerCookieName, provider.id, this.getProviderCookieSettings()),
     ];
+
+    if (refreshToken != null) {
+      cookies.push(
+        cookie.serialize(refreshTokenCookieName, refreshToken, {
+          ...this.getRefreshTokenCookieSettings(),
+          path: `${this.config.basePath}${provider.getRefreshPath()}`,
+        }),
+      );
+    }
+
+    return cookies;
   }
 
   private getDeleteCookieHeaders() {
     return [
       cookie.serialize(idTokenCookieName, "", {
         ...this.getIdTokenCookieSettings(),
+        maxAge: undefined,
         expires: new Date(1970, 1, 1, 0, 0, 0, 0),
       }),
       cookie.serialize(refreshTokenCookieName, "", {
         ...this.getRefreshTokenCookieSettings(),
+        maxAge: undefined,
         expires: new Date(1970, 1, 1, 0, 0, 0, 0),
       }),
       cookie.serialize(expiresAtCookieName, "", {
         ...this.getExpiresAtCookieSettings(),
+        maxAge: undefined,
         expires: new Date(1970, 1, 1, 0, 0, 0, 0),
       }),
       cookie.serialize(providerCookieName, "", {
         ...this.getProviderCookieSettings(),
+        maxAge: undefined,
         expires: new Date(1970, 1, 1, 0, 0, 0, 0),
       }),
     ];

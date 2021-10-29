@@ -1,8 +1,9 @@
 import Cookies from "js-cookie";
+import { signIn } from ".";
 
 export async function ensureTokenRefreshed(
   fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
-  isBrowser: boolean
+  isBrowser: boolean,
 ): Promise<void> {
   if (!isBrowser) {
     return;
@@ -22,8 +23,10 @@ export async function ensureTokenRefreshed(
   const expiresAt = new Date(safeExpiresAtSeconds * 1000);
 
   if (expiresAt < new Date()) {
-    const response = await fetch(`/api/auth/refresh/${provider}`);
-    if (!response.ok) {
+    const response = await fetch(`/api/auth/refresh/${provider}`, { method: "POST" });
+    if (response.status === 403) {
+      signIn(provider);
+    } else if (!response.ok) {
       throw new Error("Something went wrong while refreshing token!");
     }
   }

@@ -1,7 +1,7 @@
 import type { EndpointOutput } from "@sveltejs/kit/types/endpoint";
 import type { ServerRequest } from "@sveltejs/kit/types/hooks";
 import type { Auth } from "../auth";
-import type { CallbackResult } from "../types";
+import type { CallbackResult, RefreshResult } from "../types";
 import { Provider, ProviderConfig } from "./base";
 
 export interface OAuth2Tokens {
@@ -20,7 +20,8 @@ export abstract class OAuth2BaseProvider<
     state: string,
     nonce: string,
   ): string | Promise<string>;
-  abstract getTokens(code: string, redirectUri: string): TokensType | Promise<TokensType>;
+  protected abstract getTokens(code: string, redirectUri: string): TokensType | Promise<TokensType>;
+  protected abstract getTokensForRefresh(refreshToken: string): TokensType | Promise<TokensType>;
 
   async signin(request: ServerRequest, auth: Auth): Promise<EndpointOutput> {
     const { method, host, query } = request;
@@ -67,13 +68,7 @@ export abstract class OAuth2BaseProvider<
     const redirect = this.getStateValue(query, "redirect");
 
     const tokens = await this.getTokens(code, this.getCallbackUri(auth, host));
-    const [_, payload] = tokens.id_token.split(".");
-    const payloadBuffer = Buffer.from(payload, "base64");
-    const { exp } = JSON.parse(payloadBuffer.toString("utf-8"));
-
-    if (exp == null) {
-      throw new Error("exp claim must be specified");
-    }
+    const exp = getExpirationFromIdToken(tokens.id_token);
 
     return {
       idToken: tokens.id_token,
@@ -82,4 +77,27 @@ export abstract class OAuth2BaseProvider<
       expiresAt: exp,
     };
   }
+
+  public override async refresh(refreshToken: string): Promise<RefreshResult> {
+    const tokens = await this.getTokensForRefresh(refreshToken);
+    const exp = getExpirationFromIdToken(tokens.id_token);
+
+    return {
+      idToken: tokens.id_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: exp,
+    };
+  }
+}
+
+function getExpirationFromIdToken(idToken: string): number {
+  const [_, payload] = idToken.split(".");
+  const payloadBuffer = Buffer.from(payload, "base64");
+  const { exp } = JSON.parse(payloadBuffer.toString("utf-8"));
+
+  if (exp == null) {
+    throw new Error("exp claim must be specified");
+  }
+
+  return exp;
 }
