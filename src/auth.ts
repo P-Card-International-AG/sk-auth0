@@ -9,7 +9,11 @@ interface AuthConfig {
   providers: Provider[];
   callbacks?: AuthCallbacks;
   host?: string;
-  basePath?: string;
+  basePath: string;
+  secure: boolean;
+  domain?: string;
+  sameSite: "strict" | "lax" | "none" | boolean;
+  maxAge: number;
 }
 
 interface AuthCallbacks {
@@ -22,21 +26,26 @@ const refreshTokenCookieName = "svelteauth_refresh_token";
 const expiresAtCookieName = "svelteauth_expires_at";
 const providerCookieName = "svelteauth_provider";
 
-const maxAge = 60 * 60 * 24 * 30;
-
 export class Auth {
-  constructor(private readonly config?: AuthConfig) {}
+  private readonly config: AuthConfig;
 
-  get basePath() {
-    return this.config?.basePath ?? "/api/auth";
+  constructor(config: Partial<AuthConfig>) {
+    this.config = {
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      sameSite: "strict",
+      secure: true,
+      basePath: "/api/auth",
+      providers: [],
+      ...config
+    };
   }
 
   getBaseUrl(host?: string) {
-    return this.config?.host ?? `http://${host}`;
+    return this.config.host ?? `http://${host}`;
   }
 
   getPath(path: string) {
-    const pathname = join([this.basePath, path]);
+    const pathname = join([this.config.basePath, path]);
     return pathname;
   }
 
@@ -45,15 +54,20 @@ export class Auth {
     return new URL(pathname, this.getBaseUrl(host)).href;
   }
 
-  async isSignedIn({ headers }: ServerRequest): Promise<boolean> {
+  isSignedIn({ headers }: ServerRequest): boolean {
     const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? "");
 
     return idToken != null;
   }
 
+  getIdToken({ headers }: ServerRequest): string | null {
+    const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? "");
+    return idToken;
+  }
+
   async getRedirectUrl(redirectUrl?: string) {
     let redirect = redirectUrl ?? "/";
-    if (this.config?.callbacks?.redirect) {
+    if (this.config.callbacks?.redirect) {
       redirect = await this.config.callbacks.redirect(redirect);
     }
     return redirect;
@@ -67,12 +81,12 @@ export class Auth {
     }
 
     const regex = new RegExp(
-      join([this.basePath, `(?<method>signin|refresh|callback)/(?<provider>\\w+)`]),
+      join([this.config.basePath, `(?<method>signin|refresh|callback)/(?<provider>\\w+)`]),
     );
     const match = path.match(regex);
 
     if (match && match.groups) {
-      const provider = this.config?.providers?.find(
+      const provider = this.config.providers?.find(
         (provider) => provider.id === match.groups!.provider,
       );
       if (provider) {
@@ -180,7 +194,7 @@ export class Auth {
       cookie.serialize(idTokenCookieName, idToken, this.getIdTokenCookieSettings()),
       cookie.serialize(refreshTokenCookieName, refreshToken, {
         ...this.getRefreshTokenCookieSettings(),
-        path: `${this.basePath}${provider.getRefreshPath()}`,
+        path: `${this.config.basePath}${provider.getRefreshPath()}`,
       }),
       cookie.serialize(
         expiresAtCookieName,
@@ -216,36 +230,40 @@ export class Auth {
     return {
       httpOnly: true,
       path: "/",
-      sameSite: "strict",
-      secure: true,
-      maxAge,
+      sameSite: this.config.sameSite,
+      secure: this.config.secure,
+      domain: this.config.domain,
+      maxAge: this.config.maxAge,
     };
   }
 
   private getRefreshTokenCookieSettings(): cookie.CookieSerializeOptions {
     return {
       httpOnly: true,
-      sameSite: "strict",
-      secure: true,
-      maxAge,
+      sameSite: this.config.sameSite,
+      secure: this.config.secure,
+      domain: this.config.domain,
+      maxAge: this.config.maxAge,
     };
   }
 
   private getExpiresAtCookieSettings(): cookie.CookieSerializeOptions {
     return {
       path: "/",
-      sameSite: "strict",
-      secure: true,
-      maxAge,
+      sameSite: this.config.sameSite,
+      secure: this.config.secure,
+      domain: this.config.domain,
+      maxAge: this.config.maxAge,
     };
   }
 
   private getProviderCookieSettings(): cookie.CookieSerializeOptions {
     return {
       path: "/",
-      sameSite: "strict",
-      secure: true,
-      maxAge,
+      sameSite: this.config.sameSite,
+      secure: this.config.secure,
+      domain: this.config.domain,
+      maxAge: this.config.maxAge,
     };
   }
 }
