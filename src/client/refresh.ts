@@ -22,7 +22,7 @@ export async function ensureTokenRefreshed(
   const expiresAt = new Date(safeExpiresAtSeconds * 1000);
 
   if (expiresAt < new Date()) {
-    const response = await fetch(`/api/auth/signin/${provider}`);
+    const response = await fetch(`/api/auth/refresh/${provider}`);
     if (!response.ok) {
       throw new Error("Something went wrong while refreshing token!");
     }
