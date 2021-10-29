@@ -3,6 +3,25 @@
 # This specific template is located at:
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/npm.gitlab-ci.yml
 
+stages:
+  - build
+  - deploy
+
+install:
+  stage: build
+  image: node:latest
+  script: yarn install
+
+lint:
+  stage: build
+  image: node:latest
+  script: yarn lint
+
+build:
+  stage: build
+  image: node:latest
+  script: yarn build
+
 publish:
   image: node:latest
   stage: deploy
