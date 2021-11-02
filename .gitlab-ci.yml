@@ -14,6 +14,9 @@ build:
     - yarn install
     - yarn lint
     - yarn build
+  artifacts:
+    paths:
+      - dist
 
 publish:
   image: node:latest
