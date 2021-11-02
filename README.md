@@ -35,16 +35,16 @@ _**Warning**: env variables prefixed with `VITE_` can be exposed and leaked into
 
 ```ts
 export const appAuth = new SvelteKitAuth({
-  providers: [
-    new GoogleOAuthProvider({
-      clientId: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_SECRET,
-      profile(profile) {
-        return { ...profile, provider: "google" };
-      },
-    }),
-  ],
-  jwtSecret: import.meta.env.JWT_SECRET_KEY,
+	providers: [
+		new GoogleOAuthProvider({
+			clientId: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID,
+			clientSecret: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_SECRET,
+			profile(profile) {
+				return { ...profile, provider: 'google' };
+			}
+		})
+	],
+	jwtSecret: import.meta.env.JWT_SECRET_KEY
 });
 ```
 
@@ -56,9 +56,9 @@ export const { getSession } = appAuth;
 
 // augmenting it
 export const getSession: GetSession = async (request) => {
-  const { user } = await appAuth.getSession(request);
+	const { user } = await appAuth.getSession(request);
 
-  return { user };
+	return { user };
 };
 ```
 
@@ -68,10 +68,10 @@ SvelteKitAuth provides some callbacks, similar to NextAuth.js. Their call signat
 
 ```ts
 interface AuthCallbacks {
-  signIn?: () => boolean | Promise<boolean>;
-  jwt?: (token: JWT, profile?: any) => JWT | Promise<JWT>;
-  session?: (token: JWT, session: Session) => Session | Promise<Session>;
-  redirect?: (url: string) => string | Promise<string>;
+	signIn?: () => boolean | Promise<boolean>;
+	jwt?: (token: JWT, profile?: any) => JWT | Promise<JWT>;
+	session?: (token: JWT, session: Session) => Session | Promise<Session>;
+	redirect?: (url: string) => string | Promise<string>;
 }
 ```
 
@@ -83,13 +83,13 @@ You can implement your own using the `Provider` base provider class, and by impl
 
 ```ts
 export abstract class Provider<T extends ProviderConfig = ProviderConfig> {
-  abstract signin<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
-    request: ServerRequest<Locals, Body>,
-  ): EndpointOutput | Promise<EndpointOutput>;
+	abstract signin<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
+		request: ServerRequest<Locals, Body>
+	): EndpointOutput | Promise<EndpointOutput>;
 
-  abstract callback<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
-    request: ServerRequest<Locals, Body>,
-  ): CallbackResult | Promise<CallbackResult>;
+	abstract callback<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
+		request: ServerRequest<Locals, Body>
+	): CallbackResult | Promise<CallbackResult>;
 }
 ```
 
@@ -110,19 +110,19 @@ SvelteKitAuth comes with a built-in OAuth2 provider that takes extensive configu
 
 ```ts
 export interface OAuth2ProviderConfig<ProfileType = any, TokensType extends OAuth2Tokens = any>
-  extends OAuth2BaseProviderConfig<ProfileType, TokensType> {
-  accessTokenUrl?: string;
-  authorizationUrl?: string;
-  profileUrl?: string;
-  clientId?: string;
-  clientSecret?: string;
-  scope: string | string[];
-  headers?: any;
-  authorizationParams?: any;
-  params: any;
-  grantType?: string;
-  responseType?: string;
-  contentType?: "application/json" | "application/x-www-form-urlencoded";
+	extends OAuth2BaseProviderConfig<ProfileType, TokensType> {
+	accessTokenUrl?: string;
+	authorizationUrl?: string;
+	profileUrl?: string;
+	clientId?: string;
+	clientSecret?: string;
+	scope: string | string[];
+	headers?: any;
+	authorizationParams?: any;
+	params: any;
+	grantType?: string;
+	responseType?: string;
+	contentType?: 'application/json' | 'application/x-www-form-urlencoded';
 }
 ```
 
@@ -130,9 +130,9 @@ Some values have defaults which can be seen below:
 
 ```ts
 const defaultConfig: Partial<OAuth2ProviderConfig> = {
-  responseType: "code",
-  grantType: "authorization_code",
-  contentType: "application/json",
+	responseType: 'code',
+	grantType: 'authorization_code',
+	contentType: 'application/json'
 };
 ```
 
