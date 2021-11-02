@@ -47,7 +47,7 @@ export abstract class OAuth2BaseProvider<
 	}
 
 	getStateValue(query: URLSearchParams, name: string): string | undefined {
-		const stateParam = query.get("state");
+		const stateParam = query.get('state');
 		if (stateParam) {
 			const state = Buffer.from(stateParam, 'base64').toString();
 			return state
