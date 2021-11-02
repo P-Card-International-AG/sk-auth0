@@ -3,6 +3,10 @@ interface SignOutConfig {
 }
 
 export function signOut(config?: SignOutConfig): void {
+	window.location.href = signOutUrl(config);
+}
+
+export function signOutUrl(config?: SignOutConfig): string {
 	let redirectUrl: string | undefined;
 	if (config?.redirectUrl) {
 		redirectUrl = config.redirectUrl;
@@ -14,7 +18,6 @@ export function signOut(config?: SignOutConfig): void {
 		redirect: redirectUrl
 	};
 	const query = new URLSearchParams(queryData);
-	const path = `/api/auth/signout?${query}`;
 
-	window.location.href = path;
+	return `/api/auth/signout?${query}`;
 }

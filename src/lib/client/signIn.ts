@@ -3,6 +3,10 @@ interface SignInConfig {
 }
 
 export function signIn(provider: string, config?: SignInConfig): void {
+	window.location.href = signInUrl(provider, config);
+}
+
+export function signInUrl(provider: string, config?: SignInConfig): string {
 	let redirectUrl: string | undefined;
 	if (config?.redirectUrl) {
 		redirectUrl = config.redirectUrl;
@@ -14,7 +18,6 @@ export function signIn(provider: string, config?: SignInConfig): void {
 		redirect: redirectUrl
 	};
 	const query = new URLSearchParams(queryData);
-	const path = `/api/auth/signin/${provider}?${query}`;
 
-	window.location.href = path;
+	return `/api/auth/signin/${provider}?${query}`;
 }
