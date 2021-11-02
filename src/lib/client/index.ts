@@ -1,3 +1,3 @@
-export { signIn } from './signIn';
-export { signOut } from './signOut';
+export { signIn, signInUrl } from './signIn';
+export { signOut, signOutUrl } from './signOut';
 export { ensureTokenRefreshed } from './refresh';
