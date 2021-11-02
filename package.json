@@ -38,5 +38,9 @@
 		".": "./index.js",
 		"./client": "./client/index.js",
 		"./providers": "./providers/index.js"
+	},
+	"volta": {
+		"node": "16.13.0",
+		"npm": "8.1.2"
 	}
 }
