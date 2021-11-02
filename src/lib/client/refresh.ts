@@ -1,3 +1,5 @@
+import { expiresAtCookieName, providerCookieName } from '../cookies';
+import { isSessionExpired } from '../helpers';
 import Cookies from 'js-cookie';
 import { signIn } from '.';
 
@@ -9,8 +11,8 @@ export async function ensureTokenRefreshed(
 		return;
 	}
 
-	const expiresAtString = Cookies.get('svelteauth_expires_at');
-	const provider = Cookies.get('svelteauth_provider');
+	const expiresAtString = Cookies.get(expiresAtCookieName);
+	const provider = Cookies.get(providerCookieName);
 	if (expiresAtString == null || provider == null) {
 		return;
 	}
@@ -19,10 +21,7 @@ export async function ensureTokenRefreshed(
 	if (isNaN(expiresAtSeconds)) {
 		return;
 	}
-	const safeExpiresAtSeconds = expiresAtSeconds - 10 * 60;
-	const expiresAt = new Date(safeExpiresAtSeconds * 1000);
-
-	if (expiresAt < new Date()) {
+	if (isSessionExpired(expiresAtSeconds)) {
 		const response = await fetch(`/api/auth/refresh/${provider}`, { method: 'POST' });
 		if (response.status === 403) {
 			signIn(provider);

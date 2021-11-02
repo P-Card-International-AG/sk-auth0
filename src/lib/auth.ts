@@ -1,10 +1,16 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import type { EndpointOutput } from '@sveltejs/kit/types/endpoint';
-import type { ServerRequest } from '@sveltejs/kit/types/hooks';
+import type { Handle, ServerRequest } from '@sveltejs/kit/types/hooks';
 import { join } from './path';
 import type { Provider } from './providers';
 import cookie from 'cookie';
 import { RefreshTokenExpiredError } from './providers/errors';
+import { isSessionExpired } from './helpers';
+import * as cookies from './cookies';
+
+// This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
+const { expiresAtCookieName, idTokenCookieName, providerCookieName, refreshTokenCookieName } =
+	cookies;
 
 interface AuthConfig {
 	providers: Provider[];
@@ -15,17 +21,13 @@ interface AuthConfig {
 	domain?: string;
 	sameSite: 'strict' | 'lax' | 'none' | boolean;
 	maxAge: number;
+	apiPath?: string;
 }
 
 interface AuthCallbacks {
 	signIn?: () => boolean | Promise<boolean>;
 	redirect?: (url: string) => string | Promise<string>;
 }
-
-const idTokenCookieName = 'svelteauth_id_token';
-const refreshTokenCookieName = 'svelteauth_refresh_token';
-const expiresAtCookieName = 'svelteauth_expires_at';
-const providerCookieName = 'svelteauth_provider';
 
 export class Auth {
 	private readonly config: AuthConfig;
@@ -41,32 +43,72 @@ export class Auth {
 		};
 	}
 
-	getBaseUrl(host?: string): string {
-		return this.config.host ?? `http://${host}`;
-	}
-
-	getPath(path: string): string {
-		const pathname = join([this.config.basePath, path]);
-		return pathname;
-	}
-
-	getUrl(path: string, host?: string): string {
-		const pathname = this.getPath(path);
-		return new URL(pathname, this.getBaseUrl(host)).href;
-	}
-
-	isSignedIn({ headers }: ServerRequest): boolean {
+	public isSignedIn({ headers }: ServerRequest): boolean {
 		const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? '');
 
 		return idToken != null;
 	}
 
-	getIdToken({ headers }: ServerRequest): string | null {
+	public getUrl(path: string, host?: string): string {
+		const pathname = this.getPath(path);
+		return new URL(pathname, this.getBaseUrl(host)).href;
+	}
+
+	public handle: Handle = ({ request, resolve }) => {
+		if (this.config.apiPath && request.path.startsWith(this.config.apiPath)) {
+			request.locals.idToken = this.getIdTokenCookie(request);
+		} else {
+			const expiresAt = this.getExpiresAtCookie(request);
+			const provider = this.getProviderCookie(request);
+			if (expiresAt != null && provider != null && isSessionExpired(expiresAt)) {
+				return {
+					status: 302,
+					headers: {
+						Location: `/api/auth/refresh/${provider}?redirect=${
+							request.path + ([...request.query].length > 0 ? '?' + request.query.toString() : '')
+						}`
+					}
+				};
+			}
+		}
+
+		return resolve(request);
+	};
+
+	private getIdTokenCookie({ headers }: ServerRequest): string | null {
 		const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? '');
 		return idToken;
 	}
 
-	async getRedirectUrl(redirectUrl?: string): Promise<string> {
+	private getExpiresAtCookie({ headers }: ServerRequest): number | null {
+		const { [expiresAtCookieName]: expiresAtString } = cookie.parse(headers.cookie ?? '');
+		if (expiresAtString == null) {
+			return null;
+		}
+
+		const expiresAtSeconds = parseInt(expiresAtString, 10);
+		if (isNaN(expiresAtSeconds)) {
+			return null;
+		}
+
+		return expiresAtSeconds;
+	}
+
+	private getProviderCookie({ headers }: ServerRequest): string | null {
+		const { [providerCookieName]: provider } = cookie.parse(headers.cookie ?? '');
+		return provider;
+	}
+
+	private getBaseUrl(host?: string): string {
+		return this.config.host ?? `http://${host}`;
+	}
+
+	private getPath(path: string): string {
+		const pathname = join([this.config.basePath, path]);
+		return pathname;
+	}
+
+	private async getRedirectUrl(redirectUrl?: string): Promise<string> {
 		let redirect = redirectUrl ?? '/';
 		if (this.config.callbacks?.redirect) {
 			redirect = await this.config.callbacks.redirect(redirect);
@@ -74,7 +116,7 @@ export class Auth {
 		return redirect;
 	}
 
-	async handleEndpoint(request: ServerRequest): Promise<EndpointOutput> {
+	private async handleEndpoint(request: ServerRequest): Promise<EndpointOutput> {
 		const { path } = request;
 
 		if (path === this.getPath('signout')) {
@@ -108,7 +150,7 @@ export class Auth {
 		};
 	}
 
-	async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
+	private async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
 		const { method } = request;
 		if (method === 'POST') {
 			return {
@@ -132,7 +174,7 @@ export class Auth {
 		};
 	}
 
-	async handleProviderCallback(
+	private async handleProviderCallback(
 		request: ServerRequest,
 		provider: Provider
 	): Promise<EndpointOutput> {
@@ -151,7 +193,7 @@ export class Auth {
 		};
 	}
 
-	async handleRefresh(request: ServerRequest, provider: Provider): Promise<EndpointOutput> {
+	private async handleRefresh(request: ServerRequest, provider: Provider): Promise<EndpointOutput> {
 		const { headers, query } = request;
 		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(headers.cookie);
 		try {
