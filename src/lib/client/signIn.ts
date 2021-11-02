@@ -2,7 +2,7 @@ interface SignInConfig {
 	redirectUrl?: string;
 }
 
-export function signIn(provider: string, config?: SignInConfig) {
+export function signIn(provider: string, config?: SignInConfig): void {
 	let redirectUrl: string | undefined;
 	if (config?.redirectUrl) {
 		redirectUrl = config.redirectUrl;

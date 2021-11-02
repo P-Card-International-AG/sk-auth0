@@ -41,16 +41,16 @@ export class Auth {
 		};
 	}
 
-	getBaseUrl(host?: string) {
+	getBaseUrl(host?: string): string {
 		return this.config.host ?? `http://${host}`;
 	}
 
-	getPath(path: string) {
+	getPath(path: string): string {
 		const pathname = join([this.config.basePath, path]);
 		return pathname;
 	}
 
-	getUrl(path: string, host?: string) {
+	getUrl(path: string, host?: string): string {
 		const pathname = this.getPath(path);
 		return new URL(pathname, this.getBaseUrl(host)).href;
 	}
@@ -66,7 +66,7 @@ export class Auth {
 		return idToken;
 	}
 
-	async getRedirectUrl(redirectUrl?: string) {
+	async getRedirectUrl(redirectUrl?: string): Promise<string> {
 		let redirect = redirectUrl ?? '/';
 		if (this.config.callbacks?.redirect) {
 			redirect = await this.config.callbacks.redirect(redirect);
@@ -88,7 +88,7 @@ export class Auth {
 
 		if (match && match.groups) {
 			const provider = this.config.providers?.find(
-				(provider) => provider.id === match.groups!.provider
+				(provider) => provider.getId() === match.groups.provider
 			);
 			if (provider) {
 				if (match.groups.method === 'signin') {

@@ -1,4 +1,3 @@
-export type Profile = any;
 export type CallbackResult = {
 	idToken: string;
 	refreshToken: string;

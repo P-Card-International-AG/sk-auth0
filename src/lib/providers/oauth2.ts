@@ -6,15 +6,15 @@ import { RefreshTokenExpiredError } from './errors';
 import { OAuth2BaseProvider, OAuth2Tokens } from './oauth2.base';
 
 export interface OAuth2ProviderConfig extends ProviderConfig {
-	accessTokenUrl?: string;
+	accessTokenUrl: string;
 	authorizationUrl?: string;
-	profileUrl?: string;
+	profileUrl: string;
 	clientId?: string;
 	clientSecret?: string;
-	scope?: string | string[];
-	headers?: any;
-	authorizationParams?: any;
-	params?: any;
+	scope: string | string[];
+	headers?: Record<string, string>;
+	authorizationParams?: Record<string, string>;
+	params?: Record<string, string>;
 	grantType?: string;
 	responseType?: string;
 	contentType?: 'application/json' | 'application/x-www-form-urlencoded';
@@ -27,7 +27,7 @@ const defaultConfig: Partial<OAuth2ProviderConfig> = {
 };
 
 export class OAuth2Provider<
-	ProfileType = any,
+	ProfileType = unknown,
 	TokensType extends OAuth2Tokens = OAuth2Tokens,
 	ConfigType extends OAuth2ProviderConfig = OAuth2ProviderConfig
 > extends OAuth2BaseProvider<TokensType, ConfigType> {
@@ -38,13 +38,13 @@ export class OAuth2Provider<
 		});
 	}
 
-	getAuthorizationUrl({ host }: ServerRequest, auth: Auth, state: string, nonce: string) {
+	getAuthorizationUrl({ host }: ServerRequest, auth: Auth, state: string, nonce: string): string {
 		const data = {
 			state,
 			nonce,
 			response_type: this.config.responseType,
 			client_id: this.config.clientId,
-			scope: Array.isArray(this.config.scope) ? this.config.scope.join(' ') : this.config.scope!,
+			scope: Array.isArray(this.config.scope) ? this.config.scope.join(' ') : this.config.scope,
 			redirect_uri: this.getCallbackUri(auth, host),
 			...(this.config.authorizationParams ?? {})
 		};
@@ -54,7 +54,7 @@ export class OAuth2Provider<
 	}
 
 	async getTokens(code: string, redirectUri: string): Promise<TokensType> {
-		const data: Record<string, any> = {
+		const data: Record<string, string> = {
 			code,
 			grant_type: this.config.grantType,
 			client_id: this.config.clientId,
@@ -72,7 +72,7 @@ export class OAuth2Provider<
 			body = JSON.stringify(data);
 		}
 
-		const res = await fetch(this.config.accessTokenUrl!, {
+		const res = await fetch(this.config.accessTokenUrl, {
 			body,
 			method: 'POST',
 			headers: {
@@ -85,14 +85,14 @@ export class OAuth2Provider<
 	}
 
 	async getUserProfile(tokens: TokensType): Promise<ProfileType> {
-		const res = await fetch(this.config.profileUrl!, {
+		const res = await fetch(this.config.profileUrl, {
 			headers: { Authorization: `${ucFirst(tokens.token_type)} ${tokens.id_token}` }
 		});
 		return await res.json();
 	}
 
 	override async getTokensForRefresh(refreshToken: string): Promise<TokensType> {
-		const data: Record<string, any> = {
+		const data: Record<string, string> = {
 			grant_type: 'refresh_token',
 			client_id: this.config.clientId,
 			client_secret: this.config.clientSecret,
@@ -109,7 +109,7 @@ export class OAuth2Provider<
 			body = JSON.stringify(data);
 		}
 
-		const res = await fetch(this.config.accessTokenUrl!, {
+		const res = await fetch(this.config.accessTokenUrl, {
 			body,
 			method: 'POST',
 			headers: {

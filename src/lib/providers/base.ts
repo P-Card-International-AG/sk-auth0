@@ -4,34 +4,37 @@ import type { Auth } from '../auth';
 import type { CallbackResult, RefreshResult } from '../types';
 
 export interface ProviderConfig {
-	id?: string;
+	id: string;
 }
 
 export abstract class Provider<T extends ProviderConfig = ProviderConfig> {
-	id: string;
+	constructor(protected readonly config: T) {}
 
-	constructor(protected readonly config: T) {
-		this.id = config.id!;
+	getId(): string {
+		return this.config.id;
 	}
 
-	getUri(svelteKitAuth: Auth, path: string, host?: string) {
+	getUri(svelteKitAuth: Auth, path: string, host?: string): string {
 		return svelteKitAuth.getUrl(path, host);
 	}
 
-	getCallbackUri(svelteKitAuth: Auth, host?: string) {
-		return this.getUri(svelteKitAuth, `${'/callback/'}${this.id}`, host);
+	getCallbackUri(svelteKitAuth: Auth, host?: string): string {
+		return this.getUri(svelteKitAuth, `${'/callback/'}${this.config.id}`, host);
 	}
 
-	getRefreshPath() {
-		return `/refresh/${this.id}`;
+	getRefreshPath(): string {
+		return `/refresh/${this.config.id}`;
 	}
 
-	abstract signin<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
+	abstract signin<Locals extends Record<string, unknown> = Record<string, unknown>, Body = unknown>(
 		request: ServerRequest<Locals, Body>,
 		svelteKitAuth: Auth
 	): EndpointOutput | Promise<EndpointOutput>;
 
-	abstract callback<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(
+	abstract callback<
+		Locals extends Record<string, unknown> = Record<string, unknown>,
+		Body = unknown
+	>(
 		request: ServerRequest<Locals, Body>,
 		svelteKitAuth: Auth
 	): CallbackResult | Promise<CallbackResult>;

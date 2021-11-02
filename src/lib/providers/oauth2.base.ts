@@ -46,9 +46,9 @@ export abstract class OAuth2BaseProvider<
 		};
 	}
 
-	getStateValue(query: URLSearchParams, name: string) {
-		if (query.get('state')) {
-			const state = Buffer.from(query.get('state')!, 'base64').toString();
+	getStateValue(query: URLSearchParams, name: string): string {
+		if (query.has('state')) {
+			const state = Buffer.from(query.get('state'), 'base64').toString();
 			return state
 				.split(',')
 				.find((state) => state.startsWith(`${name}=`))
@@ -91,7 +91,7 @@ export abstract class OAuth2BaseProvider<
 }
 
 function getExpirationFromIdToken(idToken: string): number {
-	const [_, payload] = idToken.split('.');
+	const [, payload] = idToken.split('.');
 	const payloadBuffer = Buffer.from(payload, 'base64');
 	const { exp } = JSON.parse(payloadBuffer.toString('utf-8'));
 

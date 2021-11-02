@@ -2,7 +2,7 @@ interface SignOutConfig {
 	redirectUrl?: string;
 }
 
-export function signOut(config?: SignOutConfig) {
+export function signOut(config?: SignOutConfig): void {
 	let redirectUrl: string | undefined;
 	if (config?.redirectUrl) {
 		redirectUrl = config.redirectUrl;
