@@ -23,7 +23,7 @@ export abstract class Provider<T extends ProviderConfig = ProviderConfig> {
   }
 
   getRefreshPath() {
-    return `/refresh/${this.id}`
+    return `/refresh/${this.id}`;
   }
 
   abstract signin<Locals extends Record<string, any> = Record<string, any>, Body = unknown>(

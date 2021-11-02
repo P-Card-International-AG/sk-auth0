@@ -13,6 +13,7 @@ module.exports = {
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": ["off", { argsIgnorePattern: "^_" }],
     "@typescript-eslint/no-non-null-assertion": "off",
+    "no-undef": "off",
   },
   env: {
     browser: true,

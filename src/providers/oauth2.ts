@@ -122,7 +122,7 @@ export class OAuth2Provider<
       throw new RefreshTokenExpiredError();
     }
     if (!res.ok) {
-      throw new Error("Something went wrong while refreshing the tokens: " + await res.text())
+      throw new Error("Something went wrong while refreshing the tokens: " + (await res.text()));
     }
 
     return await res.json();

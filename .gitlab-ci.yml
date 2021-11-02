@@ -33,7 +33,6 @@ publish:
         } >> .npmrc
       fi
     - echo "Created the following .npmrc:"; cat .npmrc
-
     # Extract a few values from package.json
     - NPM_PACKAGE_NAME=$(node -p "require('./package.json').name")
     - NPM_PACKAGE_VERSION=$(node -p "require('./package.json').version")
