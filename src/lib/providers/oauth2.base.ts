@@ -46,9 +46,10 @@ export abstract class OAuth2BaseProvider<
 		};
 	}
 
-	getStateValue(query: URLSearchParams, name: string): string {
-		if (query.has('state')) {
-			const state = Buffer.from(query.get('state'), 'base64').toString();
+	getStateValue(query: URLSearchParams, name: string): string | undefined {
+		const stateParam = query.get("state");
+		if (stateParam) {
+			const state = Buffer.from(stateParam, 'base64').toString();
 			return state
 				.split(',')
 				.find((state) => state.startsWith(`${name}=`))

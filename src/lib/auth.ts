@@ -87,8 +87,9 @@ export class Auth {
 		const match = path.match(regex);
 
 		if (match && match.groups) {
+			const providerString = match.groups.provider;
 			const provider = this.config.providers?.find(
-				(provider) => provider.getId() === match.groups.provider
+				(provider) => provider.getId() === providerString
 			);
 			if (provider) {
 				if (match.groups.method === 'signin') {
@@ -227,7 +228,7 @@ export class Auth {
 				expiresAt.toString(),
 				this.getExpiresAtCookieSettings()
 			),
-			cookie.serialize(providerCookieName, provider.id, this.getProviderCookieSettings())
+			cookie.serialize(providerCookieName, provider.getId(), this.getProviderCookieSettings())
 		];
 
 		if (refreshToken != null) {

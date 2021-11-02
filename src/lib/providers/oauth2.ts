@@ -9,31 +9,28 @@ export interface OAuth2ProviderConfig extends ProviderConfig {
 	accessTokenUrl: string;
 	authorizationUrl?: string;
 	profileUrl: string;
-	clientId?: string;
-	clientSecret?: string;
+	clientId: string;
+	clientSecret: string;
 	scope: string | string[];
 	headers?: Record<string, string>;
 	authorizationParams?: Record<string, string>;
 	params?: Record<string, string>;
-	grantType?: string;
-	responseType?: string;
-	contentType?: 'application/json' | 'application/x-www-form-urlencoded';
+	grantType: string;
+	responseType: string;
+	contentType: 'application/json' | 'application/x-www-form-urlencoded';
 }
 
-const defaultConfig: Partial<OAuth2ProviderConfig> = {
-	responseType: 'code',
-	grantType: 'authorization_code',
-	contentType: 'application/json'
-};
-
 export class OAuth2Provider<
-	ProfileType = unknown,
-	TokensType extends OAuth2Tokens = OAuth2Tokens,
-	ConfigType extends OAuth2ProviderConfig = OAuth2ProviderConfig
-> extends OAuth2BaseProvider<TokensType, ConfigType> {
-	constructor(config: ConfigType) {
+	ProfileType,
+	TokensType extends OAuth2Tokens
+> extends OAuth2BaseProvider<TokensType, OAuth2ProviderConfig> {
+	constructor(
+		config: PartialBy<OAuth2ProviderConfig, 'responseType' | 'grantType' | 'contentType'>
+	) {
 		super({
-			...defaultConfig,
+			responseType: 'code',
+			grantType: 'authorization_code',
+			contentType: 'application/json',
 			...config
 		});
 	}
@@ -113,7 +110,7 @@ export class OAuth2Provider<
 			body,
 			method: 'POST',
 			headers: {
-				'Content-Type': this.config.contentType,
+				'Content-Type': this.config.contentType ?? '',
 				...(this.config.headers ?? {})
 			}
 		});
@@ -128,3 +125,5 @@ export class OAuth2Provider<
 		return await res.json();
 	}
 }
+
+type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
