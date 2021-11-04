@@ -35,7 +35,7 @@ export class Auth {
 	constructor(config: Partial<AuthConfig>) {
 		this.config = {
 			maxAge: 60 * 60 * 24 * 30, // 30 days
-			sameSite: 'strict',
+			sameSite: 'lax',
 			secure: true,
 			basePath: '/api/auth',
 			providers: [],
@@ -99,6 +99,17 @@ export class Auth {
 		return provider;
 	}
 
+	private getProviderFromRequest(request: ServerRequest): Provider | undefined {
+		const providerName = this.getProviderCookie(request);
+		if (providerName == null) {
+			return undefined;
+		}
+
+		return this.config.providers.find(
+			(provider) => provider.getId() === providerName
+		);
+	}
+
 	private getBaseUrl(host?: string): string {
 		return this.config.host ?? `http://${host}`;
 	}
@@ -130,7 +141,7 @@ export class Auth {
 
 		if (match && match.groups) {
 			const providerString = match.groups.provider;
-			const provider = this.config.providers?.find(
+			const provider = this.config.providers.find(
 				(provider) => provider.getId() === providerString
 			);
 			if (provider) {
@@ -152,10 +163,16 @@ export class Auth {
 
 	private async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
 		const { method } = request;
+		const provider = this.getProviderFromRequest(request);
+		if (provider == null) {
+			return {
+				status: 403
+			};
+		}
 		if (method === 'POST') {
 			return {
 				headers: {
-					'set-cookie': this.getDeleteCookieHeaders()
+					'set-cookie': this.getDeleteCookieHeaders(provider)
 				},
 				body: {
 					signout: true
@@ -168,7 +185,7 @@ export class Auth {
 		return {
 			status: 302,
 			headers: {
-				'set-cookie': this.getDeleteCookieHeaders(),
+				'set-cookie': this.getDeleteCookieHeaders(provider),
 				Location: redirect
 			}
 		};
@@ -231,7 +248,7 @@ export class Auth {
 					return {
 						status: 302,
 						headers: {
-							'set-cookie': this.getDeleteCookieHeaders(),
+							'set-cookie': this.getDeleteCookieHeaders(provider),
 							Location: redirect
 						}
 					};
@@ -239,7 +256,7 @@ export class Auth {
 					return {
 						status: 403,
 						headers: {
-							'set-cookie': this.getDeleteCookieHeaders()
+							'set-cookie': this.getDeleteCookieHeaders(provider)
 						}
 					};
 				}
@@ -276,8 +293,7 @@ export class Auth {
 		if (refreshToken != null) {
 			cookies.push(
 				cookie.serialize(refreshTokenCookieName, refreshToken, {
-					...this.getRefreshTokenCookieSettings(),
-					path: `${this.config.basePath}${provider.getRefreshPath()}`
+					...this.getRefreshTokenCookieSettings(provider),
 				})
 			);
 		}
@@ -285,7 +301,7 @@ export class Auth {
 		return cookies;
 	}
 
-	private getDeleteCookieHeaders() {
+	private getDeleteCookieHeaders(provider: Provider) {
 		return [
 			cookie.serialize(idTokenCookieName, '', {
 				...this.getIdTokenCookieSettings(),
@@ -293,7 +309,7 @@ export class Auth {
 				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
 			}),
 			cookie.serialize(refreshTokenCookieName, '', {
-				...this.getRefreshTokenCookieSettings(),
+				...this.getRefreshTokenCookieSettings(provider),
 				maxAge: undefined,
 				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
 			}),
@@ -321,8 +337,9 @@ export class Auth {
 		};
 	}
 
-	private getRefreshTokenCookieSettings(): cookie.CookieSerializeOptions {
+	private getRefreshTokenCookieSettings(provider: Provider): cookie.CookieSerializeOptions {
 		return {
+			path: `${this.config.basePath}${provider.getRefreshPath()}`,
 			httpOnly: true,
 			sameSite: this.config.sameSite,
 			secure: this.config.secure,
