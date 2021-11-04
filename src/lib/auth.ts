@@ -105,9 +105,7 @@ export class Auth {
 			return undefined;
 		}
 
-		return this.config.providers.find(
-			(provider) => provider.getId() === providerName
-		);
+		return this.config.providers.find((provider) => provider.getId() === providerName);
 	}
 
 	private getBaseUrl(host?: string): string {
@@ -293,7 +291,7 @@ export class Auth {
 		if (refreshToken != null) {
 			cookies.push(
 				cookie.serialize(refreshTokenCookieName, refreshToken, {
-					...this.getRefreshTokenCookieSettings(provider),
+					...this.getRefreshTokenCookieSettings(provider)
 				})
 			);
 		}
