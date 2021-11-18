@@ -3,6 +3,7 @@ import { isSessionExpired } from '../helpers';
 import Cookies from 'js-cookie';
 import { signIn } from '.';
 
+// TODO: Ensure only one refresh is happening at a time
 export async function ensureTokenRefreshed(
 	fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
 	isBrowser: boolean
