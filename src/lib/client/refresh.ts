@@ -3,12 +3,19 @@ import { isSessionExpired } from '../helpers';
 import Cookies from 'js-cookie';
 import { signIn } from '.';
 
+let runningRefresh: Promise<Response> | null = null;
+
 // TODO: Ensure only one refresh is happening at a time
 export async function ensureTokenRefreshed(
 	fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
 	isBrowser: boolean
 ): Promise<void> {
 	if (!isBrowser) {
+		return;
+	}
+
+	if (runningRefresh != null) {
+		await runningRefresh;
 		return;
 	}
 
@@ -23,7 +30,9 @@ export async function ensureTokenRefreshed(
 		return;
 	}
 	if (isSessionExpired(expiresAtSeconds)) {
-		const response = await fetch(`/api/auth/refresh/${provider}`, { method: 'POST' });
+		runningRefresh = fetch(`/api/auth/refresh/${provider}`, { method: 'POST' });
+		const response = await runningRefresh;
+		runningRefresh = null;
 		if (response.status === 403) {
 			signIn(provider);
 		} else if (!response.ok) {
