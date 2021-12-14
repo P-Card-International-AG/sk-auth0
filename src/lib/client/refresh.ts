@@ -1,4 +1,4 @@
-import { expiresAtCookieName, providerCookieName } from '../cookies';
+import { expiresAtCookieName } from '../cookies';
 import { isSessionExpired } from '../helpers';
 import Cookies from 'js-cookie';
 import { signIn } from '.';
@@ -20,8 +20,7 @@ export async function ensureTokenRefreshed(
 	}
 
 	const expiresAtString = Cookies.get(expiresAtCookieName);
-	const provider = Cookies.get(providerCookieName);
-	if (expiresAtString == null || provider == null) {
+	if (expiresAtString == null) {
 		return;
 	}
 
@@ -30,11 +29,11 @@ export async function ensureTokenRefreshed(
 		return;
 	}
 	if (isSessionExpired(expiresAtSeconds)) {
-		runningRefresh = fetch(`/api/auth/refresh/${provider}`, { method: 'POST' });
+		runningRefresh = fetch(`/api/auth/refresh`, { method: 'POST' });
 		const response = await runningRefresh;
 		runningRefresh = null;
 		if (response.status === 403) {
-			signIn(provider);
+			signIn();
 		} else if (!response.ok) {
 			throw new Error('Something went wrong while refreshing token!');
 		}

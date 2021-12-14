@@ -2,11 +2,11 @@ interface SignInConfig {
 	redirectUrl?: string;
 }
 
-export function signIn(provider: string, config?: SignInConfig): void {
-	window.location.href = signInUrl(provider, config);
+export function signIn(config?: SignInConfig): void {
+	window.location.href = signInUrl(config);
 }
 
-export function signInUrl(provider: string, config?: SignInConfig): string {
+export function signInUrl(config?: SignInConfig): string {
 	let redirectUrl: string | undefined;
 	if (config?.redirectUrl) {
 		redirectUrl = config.redirectUrl;
@@ -19,5 +19,5 @@ export function signInUrl(provider: string, config?: SignInConfig): string {
 	};
 	const query = new URLSearchParams(queryData);
 
-	return `/api/auth/signin/${provider}?${query}`;
+	return `/api/auth/signin?${query}`;
 }

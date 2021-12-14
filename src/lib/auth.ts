@@ -2,69 +2,93 @@ import type { RequestHandler } from '@sveltejs/kit';
 import type { EndpointOutput } from '@sveltejs/kit/types/endpoint';
 import type { Handle, ServerRequest } from '@sveltejs/kit/types/hooks';
 import { join } from './path';
-import type { Provider } from './providers';
 import cookie from 'cookie';
-import { RefreshTokenExpiredError } from './providers/errors';
 import { isSessionExpired } from './helpers';
 import * as cookies from './cookies';
+import { RefreshTokenExpiredError } from './errors';
 
 // This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
-const { expiresAtCookieName, idTokenCookieName, providerCookieName, refreshTokenCookieName } =
+const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } =
 	cookies;
 
-interface AuthConfig {
-	providers: Provider[];
-	callbacks?: AuthCallbacks;
-	host?: string;
-	basePath: string;
-	secure: boolean;
-	domain?: string;
-	sameSite: 'strict' | 'lax' | 'none' | boolean;
+interface Config {
+	/**
+	 * The domain of your auth0 application. For example: dev-gx493my5.eu.auth0.com
+	 */
+	auth0Domain: string;
+	/**
+	 * The Client ID of your auth0 application.
+	 */
+	clientId: string;
+	/**
+	 * The Client Secret of your auth0 application.
+	 */
+	clientSecret: string;
+	/**
+	 * The Identifier of your auth0 API.
+	 */
+	audience: string;
+	/**
+	 * The max age of the cookies that are set.
+	 */
 	maxAge: number;
-	apiPath?: string;
+	/**
+	 * The domain of your website. This has to be set if the cookie should be sent to subdomains.
+	 */
+	domain?: string;
+	/**
+	 * The path of your api proxy. The library will pass the access token in the locals.accessToken field on the request.
+	 */
+	apiProxyPath?: string;
+	/**
+	 * Any extra scopes you want to pass to the auth0 /authorize call.
+	 */
+	extraScopes?: string[];
 }
 
-interface AuthCallbacks {
-	signIn?: () => boolean | Promise<boolean>;
-	redirect?: (url: string) => string | Promise<string>;
+interface TokenResponse {
+	access_token: string;
+	refresh_token?: string;
+	expires_in: number;
+	token_type: string;
 }
+
+const basePath = '/api/auth';
+const sameSiteConfig = 'lax';
+const secureConfig = true;
 
 export class Auth {
-	private readonly config: AuthConfig;
+	// private readonly config: AuthConfig & InternalConfig;
+	private readonly config: Config;
 
-	constructor(config: Partial<AuthConfig>) {
+	constructor(config: PartialBy<Config, 'maxAge'>) {
 		this.config = {
 			maxAge: 60 * 60 * 24 * 30, // 30 days
-			sameSite: 'lax',
-			secure: true,
-			basePath: '/api/auth',
-			providers: [],
 			...config
 		};
 	}
 
 	public isSignedIn({ headers }: ServerRequest): boolean {
-		const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? '');
+		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.cookie ?? '');
 
-		return idToken != null;
+		return accessToken != null;
 	}
 
-	public getUrl(path: string, host?: string): string {
+	public getUrl(path: string, host: string): string {
 		const pathname = this.getPath(path);
 		return new URL(pathname, this.getBaseUrl(host)).href;
 	}
 
 	public handle: Handle = ({ request, resolve }) => {
-		if (this.config.apiPath && request.path.startsWith(this.config.apiPath)) {
-			request.locals.idToken = this.getIdTokenCookie(request);
+		if (this.config.apiProxyPath && request.path.startsWith(this.config.apiProxyPath)) {
+			request.locals.accessToken = this.getAccessTokenCookie(request);
 		} else if (!request.path.startsWith('/api/auth/refresh/')) {
 			const expiresAt = this.getExpiresAtCookie(request);
-			const provider = this.getProviderCookie(request);
-			if (expiresAt != null && provider != null && isSessionExpired(expiresAt)) {
+			if (expiresAt != null && isSessionExpired(expiresAt)) {
 				return {
 					status: 302,
 					headers: {
-						Location: `/api/auth/refresh/${provider}?redirect=${
+						Location: `/api/auth/refresh?redirect=${
 							request.path + ([...request.query].length > 0 ? '?' + request.query.toString() : '')
 						}`
 					}
@@ -75,9 +99,9 @@ export class Auth {
 		return resolve(request);
 	};
 
-	private getIdTokenCookie({ headers }: ServerRequest): string | null {
-		const { [idTokenCookieName]: idToken } = cookie.parse(headers.cookie ?? '');
-		return idToken;
+	private getAccessTokenCookie({ headers }: ServerRequest): string | null {
+		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.cookie ?? '');
+		return accessToken;
 	}
 
 	private getExpiresAtCookie({ headers }: ServerRequest): number | null {
@@ -94,34 +118,17 @@ export class Auth {
 		return expiresAtSeconds;
 	}
 
-	private getProviderCookie({ headers }: ServerRequest): string | null {
-		const { [providerCookieName]: provider } = cookie.parse(headers.cookie ?? '');
-		return provider;
-	}
-
-	private getProviderFromRequest(request: ServerRequest): Provider | undefined {
-		const providerName = this.getProviderCookie(request);
-		if (providerName == null) {
-			return undefined;
-		}
-
-		return this.config.providers.find((provider) => provider.getId() === providerName);
-	}
-
-	private getBaseUrl(host?: string): string {
-		return this.config.host ?? `http://${host}`;
+	private getBaseUrl(host: string): string {
+		return `http://${host}`;
 	}
 
 	private getPath(path: string): string {
-		const pathname = join([this.config.basePath, path]);
+		const pathname = join([basePath, path]);
 		return pathname;
 	}
 
 	private async getRedirectUrl(redirectUrl?: string): Promise<string> {
-		let redirect = redirectUrl ?? '/';
-		if (this.config.callbacks?.redirect) {
-			redirect = await this.config.callbacks.redirect(redirect);
-		}
+		const redirect = redirectUrl ?? '/';
 		return redirect;
 	}
 
@@ -132,24 +139,16 @@ export class Auth {
 			return await this.handleSignout(request);
 		}
 
-		const regex = new RegExp(
-			join([this.config.basePath, `(?<method>signin|refresh|callback)/(?<provider>\\w+)`])
-		);
+		const regex = new RegExp(join([basePath, `(?<method>signin|refresh|callback)`]));
 		const match = path.match(regex);
 
 		if (match && match.groups) {
-			const providerString = match.groups.provider;
-			const provider = this.config.providers.find(
-				(provider) => provider.getId() === providerString
-			);
-			if (provider) {
-				if (match.groups.method === 'signin') {
-					return await provider.signin(request, this);
-				} else if (match.groups.method === 'refresh') {
-					return await this.handleRefresh(request, provider);
-				} else {
-					return await this.handleProviderCallback(request, provider);
-				}
+			if (match.groups.method === 'signin') {
+				return await this.handleSignin(request);
+			} else if (match.groups.method === 'refresh') {
+				return await this.handleRefresh(request);
+			} else {
+				return await this.handleCallback(request);
 			}
 		}
 
@@ -159,18 +158,50 @@ export class Auth {
 		};
 	}
 
-	private async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
-		const { method } = request;
-		const provider = this.getProviderFromRequest(request);
-		if (provider == null) {
+	private async handleSignin(request: ServerRequest): Promise<EndpointOutput> {
+		const { method, host, query } = request;
+		const state = [`redirect=${query.get('redirect') ?? this.getUrl('/', host)}`].join(',');
+		const base64State = Buffer.from(state).toString('base64');
+		const nonce = Math.round(Math.random() * 1000).toString(); // TODO: Generate random based on user values
+		const url = this.getAuthorizationUrl(request, base64State, nonce);
+
+		if (method === 'POST') {
 			return {
-				status: 403
+				body: {
+					redirect: url
+				}
 			};
 		}
+
+		return {
+			status: 302,
+			headers: {
+				Location: url
+			}
+		};
+	}
+
+	private getAuthorizationUrl({ host }: ServerRequest, state: string, nonce: string): string {
+		const data = {
+			state,
+			nonce,
+			response_type: 'code',
+			client_id: this.config.clientId,
+			audience: this.config.audience,
+			scope: ['offline_access', ...(this.config.extraScopes ?? [])].join(' '),
+			redirect_uri: this.getCallbackUri(host)
+		};
+
+		const url = `https://${this.config.auth0Domain}/authorize?${new URLSearchParams(data)}`;
+		return url;
+	}
+
+	private async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
+		const { method } = request;
 		if (method === 'POST') {
 			return {
 				headers: {
-					'set-cookie': this.getDeleteCookieHeaders(provider)
+					'set-cookie': this.getDeleteCookieHeaders()
 				},
 				body: {
 					signout: true
@@ -183,51 +214,78 @@ export class Auth {
 		return {
 			status: 302,
 			headers: {
-				'set-cookie': this.getDeleteCookieHeaders(provider),
+				'set-cookie': this.getDeleteCookieHeaders(),
 				Location: redirect
 			}
 		};
 	}
 
-	private async handleProviderCallback(
-		request: ServerRequest,
-		provider: Provider
-	): Promise<EndpointOutput> {
-		const { idToken, refreshToken, redirectUrl, expiresAt } = await provider.callback(
-			request,
-			this
-		);
+	private async handleCallback(request: ServerRequest): Promise<EndpointOutput> {
+		const { query, host } = request;
+		const code = query.get('code');
+		if (code == null) {
+			throw new Error('Code not provided');
+		}
+
+		const redirectUrl = getStateValue(query, 'redirect');
+
+		const tokens = await this.getTokens(code, this.getCallbackUri(host));
+		const accessToken = tokens.access_token;
+		const refreshToken = tokens.refresh_token;
+		const expiresAt = getExpirationFromToken(tokens.access_token);
+
 		const redirect = await this.getRedirectUrl(redirectUrl);
 
 		return {
 			status: 302,
 			headers: {
-				'set-cookie': this.getSetCookieHeaders(provider, idToken, refreshToken, expiresAt),
+				'set-cookie': this.getSetCookieHeaders(accessToken, refreshToken, expiresAt),
 				Location: redirect
 			}
 		};
 	}
 
-	private async handleRefresh(request: ServerRequest, provider: Provider): Promise<EndpointOutput> {
+	private getCallbackUri(host: string): string {
+		return this.getUrl('/callback', host);
+	}
+
+	private async getTokens(code: string, redirectUri: string): Promise<TokenResponse> {
+		const data: Record<string, string> = {
+			code,
+			grant_type: 'authorization_code',
+			client_id: this.config.clientId,
+			client_secret: this.config.clientSecret,
+			redirect_uri: redirectUri
+		};
+
+		const body = JSON.stringify(data);
+
+		const res = await fetch(`https://${this.config.auth0Domain}/oauth/token`, {
+			body,
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		return await res.json();
+	}
+
+	private async handleRefresh(request: ServerRequest): Promise<EndpointOutput> {
 		const { headers, query } = request;
 		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(headers.cookie);
 		try {
-			const {
-				idToken: newIdToken,
-				refreshToken: newRefreshToken,
-				expiresAt
-			} = await provider.refresh(oldRefreshToken, this);
+			const tokens = await this.getTokensForRefresh(oldRefreshToken);
+			const newAccessToken = tokens.access_token;
+			const newRefreshToken = tokens.refresh_token;
+			const expiresAt = getExpirationFromToken(newAccessToken);
+
 			if (request.method === 'GET') {
 				const redirect = await this.getRedirectUrl(query.get('redirect') ?? undefined);
 				return {
 					status: 302,
 					headers: {
-						'set-cookie': this.getSetCookieHeaders(
-							provider,
-							newIdToken,
-							newRefreshToken,
-							expiresAt
-						),
+						'set-cookie': this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt),
 						Location: redirect
 					}
 				};
@@ -235,7 +293,7 @@ export class Auth {
 				return {
 					status: 200,
 					headers: {
-						'set-cookie': this.getSetCookieHeaders(provider, newIdToken, newRefreshToken, expiresAt)
+						'set-cookie': this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt)
 					}
 				};
 			}
@@ -246,7 +304,7 @@ export class Auth {
 					return {
 						status: 302,
 						headers: {
-							'set-cookie': this.getDeleteCookieHeaders(provider),
+							'set-cookie': this.getDeleteCookieHeaders(),
 							Location: redirect
 						}
 					};
@@ -254,7 +312,7 @@ export class Auth {
 					return {
 						status: 403,
 						headers: {
-							'set-cookie': this.getDeleteCookieHeaders(provider)
+							'set-cookie': this.getDeleteCookieHeaders()
 						}
 					};
 				}
@@ -262,6 +320,34 @@ export class Auth {
 				throw error;
 			}
 		}
+	}
+
+	private async getTokensForRefresh(refreshToken: string): Promise<TokenResponse> {
+		const data: Record<string, string> = {
+			grant_type: 'refresh_token',
+			client_id: this.config.clientId,
+			client_secret: this.config.clientSecret,
+			refresh_token: refreshToken
+		};
+
+		const body = JSON.stringify(data);
+
+		const res = await fetch(`https://${this.config.auth0Domain}/oauth/token`, {
+			body,
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		if (res.status === 403) {
+			throw new RefreshTokenExpiredError();
+		}
+		if (!res.ok) {
+			throw new Error('Something went wrong while refreshing the tokens: ' + (await res.text()));
+		}
+
+		return await res.json();
 	}
 
 	get: RequestHandler = async (request) => {
@@ -273,25 +359,19 @@ export class Auth {
 	};
 
 	private getSetCookieHeaders(
-		provider: Provider,
-		idToken: string,
+		accessToken: string,
 		refreshToken: string | undefined,
 		expiresAt: number
 	): string[] {
 		const cookies = [
-			cookie.serialize(idTokenCookieName, idToken, this.getIdTokenCookieSettings()),
-			cookie.serialize(
-				expiresAtCookieName,
-				expiresAt.toString(),
-				this.getExpiresAtCookieSettings()
-			),
-			cookie.serialize(providerCookieName, provider.getId(), this.getProviderCookieSettings())
+			cookie.serialize(accessTokenCookieName, accessToken, this.getAccessTokenCookieSettings()),
+			cookie.serialize(expiresAtCookieName, expiresAt.toString(), this.getExpiresAtCookieSettings())
 		];
 
 		if (refreshToken != null) {
 			cookies.push(
 				cookie.serialize(refreshTokenCookieName, refreshToken, {
-					...this.getRefreshTokenCookieSettings(provider)
+					...this.getRefreshTokenCookieSettings()
 				})
 			);
 		}
@@ -299,15 +379,15 @@ export class Auth {
 		return cookies;
 	}
 
-	private getDeleteCookieHeaders(provider: Provider) {
+	private getDeleteCookieHeaders() {
 		return [
-			cookie.serialize(idTokenCookieName, '', {
-				...this.getIdTokenCookieSettings(),
+			cookie.serialize(accessTokenCookieName, '', {
+				...this.getAccessTokenCookieSettings(),
 				maxAge: undefined,
 				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
 			}),
 			cookie.serialize(refreshTokenCookieName, '', {
-				...this.getRefreshTokenCookieSettings(provider),
+				...this.getRefreshTokenCookieSettings(),
 				maxAge: undefined,
 				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
 			}),
@@ -315,54 +395,64 @@ export class Auth {
 				...this.getExpiresAtCookieSettings(),
 				maxAge: undefined,
 				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
-			}),
-			cookie.serialize(providerCookieName, '', {
-				...this.getProviderCookieSettings(),
-				maxAge: undefined,
-				expires: new Date(1970, 1, 1, 0, 0, 0, 0)
 			})
 		];
 	}
 
-	private getIdTokenCookieSettings(): cookie.CookieSerializeOptions {
+	private getAccessTokenCookieSettings(): cookie.CookieSerializeOptions {
 		return {
 			httpOnly: true,
 			path: '/',
-			sameSite: this.config.sameSite,
-			secure: this.config.secure,
-			domain: this.config.domain,
-			maxAge: this.config.maxAge
+			sameSite: sameSiteConfig,
+			secure: secureConfig,
+			maxAge: this.config.maxAge,
+			...(this.config.domain ? { domain: this.config.domain } : {})
 		};
 	}
 
-	private getRefreshTokenCookieSettings(provider: Provider): cookie.CookieSerializeOptions {
+	private getRefreshTokenCookieSettings(): cookie.CookieSerializeOptions {
 		return {
-			path: `${this.config.basePath}${provider.getRefreshPath()}`,
+			path: basePath,
 			httpOnly: true,
-			sameSite: this.config.sameSite,
-			secure: this.config.secure,
-			domain: this.config.domain,
-			maxAge: this.config.maxAge
+			sameSite: sameSiteConfig,
+			secure: secureConfig,
+			maxAge: this.config.maxAge,
+			...(this.config.domain ? { domain: this.config.domain } : {})
 		};
 	}
 
 	private getExpiresAtCookieSettings(): cookie.CookieSerializeOptions {
 		return {
 			path: '/',
-			sameSite: this.config.sameSite,
-			secure: this.config.secure,
-			domain: this.config.domain,
-			maxAge: this.config.maxAge
-		};
-	}
-
-	private getProviderCookieSettings(): cookie.CookieSerializeOptions {
-		return {
-			path: '/',
-			sameSite: this.config.sameSite,
-			secure: this.config.secure,
-			domain: this.config.domain,
-			maxAge: this.config.maxAge
+			sameSite: sameSiteConfig,
+			secure: secureConfig,
+			maxAge: this.config.maxAge,
+			...(this.config.domain ? { domain: this.config.domain } : {})
 		};
 	}
 }
+
+function getExpirationFromToken(token: string): number {
+	const [, payload] = token.split('.');
+	const payloadBuffer = Buffer.from(payload, 'base64');
+	const { exp } = JSON.parse(payloadBuffer.toString('utf-8'));
+
+	if (exp == null) {
+		throw new Error('exp claim must be specified');
+	}
+
+	return exp;
+}
+
+function getStateValue(query: URLSearchParams, name: string): string | undefined {
+	const stateParam = query.get('state');
+	if (stateParam) {
+		const state = Buffer.from(stateParam, 'base64').toString();
+		return state
+			.split(',')
+			.find((state) => state.startsWith(`${name}=`))
+			?.replace(`${name}=`, '');
+	}
+}
+
+type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
