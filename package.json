@@ -1,5 +1,5 @@
 {
-	"name": "@nicolas.seiler.kssg/sk-auth",
+	"name": "@LordMignion/sk-auth",
 	"version": "0.4.0-beta.9",
 	"scripts": {
 		"dev": "svelte-kit dev",
