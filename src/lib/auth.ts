@@ -8,8 +8,7 @@ import * as cookies from './cookies';
 import { RefreshTokenExpiredError } from './errors';
 
 // This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
-const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } =
-	cookies;
+const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } = cookies;
 
 interface Config {
 	/**
