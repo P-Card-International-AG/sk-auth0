@@ -53,3 +53,13 @@ export const getSession: GetSession<Record<string, unknown>, unknown, Session> =
 ```
 
 This sets the isSignedIn flag on the svelte session object.
+
+Finally, create the following `src/routes/api/auth/[...auth].ts` file:
+```TS
+import { appAuth } from '$lib/auth';
+
+export const { get, post } = appAuth;
+```
+This adds the endpoints needed by the library.
+
+You can now call `signIn` or `signOut` imported from `'$lib/sk-auth/client'` in your application.
