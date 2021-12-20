@@ -81,7 +81,7 @@ export class Auth {
 	public handle: Handle = ({ request, resolve }) => {
 		if (this.config.apiProxyPath && request.path.startsWith(this.config.apiProxyPath)) {
 			request.locals.accessToken = this.getAccessTokenCookie(request);
-		} else if (!request.path.startsWith('/api/auth/refresh/')) {
+		} else if (!request.path.startsWith('/api/auth/refresh')) {
 			const expiresAt = this.getExpiresAtCookie(request);
 			if (expiresAt != null && isSessionExpired(expiresAt)) {
 				return {
