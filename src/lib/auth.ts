@@ -1,11 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import type { EndpointOutput } from '@sveltejs/kit/types/endpoint';
-import type { Handle, ServerRequest } from '@sveltejs/kit/types/hooks';
+import type { Body, EndpointOutput, Fallthrough } from '@sveltejs/kit/types/endpoint';
+import type { Handle, RequestEvent } from '@sveltejs/kit/types/hooks';
 import { join } from './path';
 import cookie from 'cookie';
 import { isSessionExpired } from './helpers';
 import * as cookies from './cookies';
 import { RefreshTokenExpiredError } from './errors';
+import type { Either } from '@sveltejs/kit/types/helper';
 
 // This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
 const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } = cookies;
@@ -67,8 +68,8 @@ export class Auth {
 		};
 	}
 
-	public isSignedIn({ headers }: ServerRequest): boolean {
-		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.cookie ?? '');
+	public isSignedIn({ request: { headers } }: RequestEvent): boolean {
+		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.get('cookie') ?? '');
 
 		return accessToken != null;
 	}
@@ -78,33 +79,38 @@ export class Auth {
 		return new URL(pathname, this.getBaseUrl(host)).href;
 	}
 
-	public handle: Handle = ({ request, resolve }) => {
-		if (this.config.apiProxyPath && request.path.startsWith(this.config.apiProxyPath)) {
-			request.locals.accessToken = this.getAccessTokenCookie(request);
-		} else if (!request.path.startsWith('/api/auth/refresh')) {
+	public handle: Handle = ({ event, resolve }) => {
+		const request = event.request;
+		const path = event.url.pathname;
+		if (this.config.apiProxyPath && path.startsWith(this.config.apiProxyPath)) {
+			event.locals.accessToken = this.getAccessTokenCookie(request);
+		} else if (!path.startsWith('/api/auth/refresh')) {
 			const expiresAt = this.getExpiresAtCookie(request);
 			if (expiresAt != null && isSessionExpired(expiresAt)) {
-				return {
+				return new Response(null, {
 					status: 302,
 					headers: {
 						Location: `/api/auth/refresh?redirect=${
-							request.path + ([...request.query].length > 0 ? '?' + request.query.toString() : '')
+							path +
+							([...event.url.searchParams].length > 0
+								? '?' + event.url.searchParams.toString()
+								: '')
 						}`
 					}
-				};
+				});
 			}
 		}
 
-		return resolve(request);
+		return resolve(event);
 	};
 
-	private getAccessTokenCookie({ headers }: ServerRequest): string | null {
-		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.cookie ?? '');
+	private getAccessTokenCookie({ headers }: Request): string | null {
+		const { [accessTokenCookieName]: accessToken } = cookie.parse(headers.get('cookie') ?? '');
 		return accessToken;
 	}
 
-	private getExpiresAtCookie({ headers }: ServerRequest): number | null {
-		const { [expiresAtCookieName]: expiresAtString } = cookie.parse(headers.cookie ?? '');
+	private getExpiresAtCookie({ headers }: Request): number | null {
+		const { [expiresAtCookieName]: expiresAtString } = cookie.parse(headers.get('cookie') ?? '');
 		if (expiresAtString == null) {
 			return null;
 		}
@@ -131,11 +137,13 @@ export class Auth {
 		return redirect;
 	}
 
-	private async handleEndpoint(request: ServerRequest): Promise<EndpointOutput> {
-		const { path } = request;
+	private async handleEndpoint(
+		event: RequestEvent
+	): Promise<Either<EndpointOutput<Body>, Fallthrough>> {
+		const path = event.url.pathname;
 
 		if (path === this.getPath('signout')) {
-			return await this.handleSignout(request);
+			return await this.handleSignout(event);
 		}
 
 		const regex = new RegExp(join([basePath, `(?<method>signin|refresh|callback)`]));
@@ -143,11 +151,11 @@ export class Auth {
 
 		if (match && match.groups) {
 			if (match.groups.method === 'signin') {
-				return await this.handleSignin(request);
+				return await this.handleSignin(event);
 			} else if (match.groups.method === 'refresh') {
-				return await this.handleRefresh(request);
+				return await this.handleRefresh(event);
 			} else {
-				return await this.handleCallback(request);
+				return await this.handleCallback(event);
 			}
 		}
 
@@ -157,14 +165,14 @@ export class Auth {
 		};
 	}
 
-	private async handleSignin(request: ServerRequest): Promise<EndpointOutput> {
-		const { method, host, query } = request;
-		const state = [`redirect=${query.get('redirect') ?? this.getUrl('/', host)}`].join(',');
+	private async handleSignin(event: RequestEvent): Promise<EndpointOutput> {
+		const { host, searchParams } = event.url;
+		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', host)}`].join(',');
 		const base64State = Buffer.from(state).toString('base64');
 		const nonce = Math.round(Math.random() * 1000).toString(); // TODO: Generate random based on user values
-		const url = this.getAuthorizationUrl(request, base64State, nonce);
+		const url = this.getAuthorizationUrl(event, base64State, nonce);
 
-		if (method === 'POST') {
+		if (event.request.method === 'POST') {
 			return {
 				body: {
 					redirect: url
@@ -180,7 +188,7 @@ export class Auth {
 		};
 	}
 
-	private getAuthorizationUrl({ host }: ServerRequest, state: string, nonce: string): string {
+	private getAuthorizationUrl(event: RequestEvent, state: string, nonce: string): string {
 		const data = {
 			state,
 			nonce,
@@ -188,16 +196,15 @@ export class Auth {
 			client_id: this.config.clientId,
 			audience: this.config.audience,
 			scope: ['offline_access', ...(this.config.extraScopes ?? [])].join(' '),
-			redirect_uri: this.getCallbackUri(host)
+			redirect_uri: this.getCallbackUri(event.url.host)
 		};
 
 		const url = `https://${this.config.auth0Domain}/authorize?${new URLSearchParams(data)}`;
 		return url;
 	}
 
-	private async handleSignout(request: ServerRequest): Promise<EndpointOutput> {
-		const { method } = request;
-		if (method === 'POST') {
+	private async handleSignout(event: RequestEvent): Promise<EndpointOutput> {
+		if (event.request.method === 'POST') {
 			return {
 				headers: {
 					'set-cookie': this.getDeleteCookieHeaders()
@@ -208,7 +215,7 @@ export class Auth {
 			};
 		}
 
-		const redirect = await this.getRedirectUrl(request.query.get('redirect') ?? undefined);
+		const redirect = await this.getRedirectUrl(event.url.searchParams.get('redirect') ?? undefined);
 
 		return {
 			status: 302,
@@ -219,14 +226,14 @@ export class Auth {
 		};
 	}
 
-	private async handleCallback(request: ServerRequest): Promise<EndpointOutput> {
-		const { query, host } = request;
-		const code = query.get('code');
+	private async handleCallback(event: RequestEvent): Promise<EndpointOutput> {
+		const { searchParams, host } = event.url;
+		const code = searchParams.get('code');
 		if (code == null) {
 			throw new Error('Code not provided');
 		}
 
-		const redirectUrl = getStateValue(query, 'redirect');
+		const redirectUrl = getStateValue(searchParams, 'redirect');
 
 		const tokens = await this.getTokens(code, this.getCallbackUri(host));
 		const accessToken = tokens.access_token;
@@ -270,17 +277,19 @@ export class Auth {
 		return await res.json();
 	}
 
-	private async handleRefresh(request: ServerRequest): Promise<EndpointOutput> {
-		const { headers, query } = request;
-		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(headers.cookie);
+	private async handleRefresh(event: RequestEvent): Promise<EndpointOutput> {
+		const { searchParams } = event.url;
+		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(
+			event.request.headers.get('cookie')
+		);
 		try {
 			const tokens = await this.getTokensForRefresh(oldRefreshToken);
 			const newAccessToken = tokens.access_token;
 			const newRefreshToken = tokens.refresh_token;
 			const expiresAt = getExpirationFromToken(newAccessToken);
 
-			if (request.method === 'GET') {
-				const redirect = await this.getRedirectUrl(query.get('redirect') ?? undefined);
+			if (event.request.method === 'GET') {
+				const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
 				return {
 					status: 302,
 					headers: {
@@ -298,8 +307,8 @@ export class Auth {
 			}
 		} catch (error) {
 			if (error instanceof RefreshTokenExpiredError) {
-				if (request.method === 'GET') {
-					const redirect = await this.getRedirectUrl(query.get('redirect') ?? undefined);
+				if (event.request.method === 'GET') {
+					const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
 					return {
 						status: 302,
 						headers: {
@@ -349,8 +358,8 @@ export class Auth {
 		return await res.json();
 	}
 
-	get: RequestHandler = async (request) => {
-		return await this.handleEndpoint(request);
+	get: RequestHandler = async (event) => {
+		return await this.handleEndpoint(event);
 	};
 
 	post: RequestHandler = async (request) => {
