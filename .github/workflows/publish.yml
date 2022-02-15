@@ -9,6 +9,8 @@ jobs:
       - uses: actions/checkout@v2
       - uses: volta-cli/action@v1
       - run: npm ci
+      - run: npm run lint
+      - run: npm run check
       - run: npm run package
       - run: |
           npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
