@@ -1,5 +1,9 @@
 # SvelteKit Auth0
 
+A Auth0 integration for SvelteKit.
+This integration uses http only cookies so that the js has no access to the jwt.
+You have to pass all requests to external services through a proxy so that the server can inspect the cookie and attach it to the request.
+
 ## Setup auth0
 
 1. Create a regular web application in auth0.
@@ -19,7 +23,7 @@ Add the allowed callback url "http://localhost:3000/\*" in the "Application URIs
 Create the following `src/lib/auth.ts` file:
 
 ```TS
-import { SvelteKitAuth } from '@nicolas.seiler/sk-auth';
+import { SvelteKitAuth } from 'sk-auth0';
 
 export const appAuth = new SvelteKitAuth({
 	auth0Domain: import.meta.env.VITE_AUTH0_DOMAIN,
@@ -84,14 +88,14 @@ export const { get, post } = appAuth;
 
 This adds the endpoints needed by the library.
 
-You can now call `signIn` or `signOut` imported from `'$lib/sk-auth/client'` in your application.
+You can now call `signIn` or `signOut` imported from `'sk-auth0/client'` in your application.
 
 You can sign in and logout like this:
 
 ```SVELTE
 <script lang="ts">
 	import { session } from '$app/stores';
-	import { signIn, signOut } from '@nicolas.seiler/sk-auth/client';
+	import { signIn, signOut } from 'sk-auth0/client';
 </script>
 
 {#if $session.isSignedIn}

@@ -1,0 +1,18 @@
+name: Publish Package to npmjs
+on:
+  release:
+    types: [created]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: volta-cli/action@v1
+      - run: npm ci
+      - run: npm run package
+      - run: |
+          npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
+          npm publish --ignore-scripts --access public
+        working-directory: ./package
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
