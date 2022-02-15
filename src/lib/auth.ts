@@ -1,12 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import type { Body, EndpointOutput, Fallthrough } from '@sveltejs/kit/types/endpoint';
 import type { Handle, RequestEvent } from '@sveltejs/kit/types/hooks';
-import { join } from './path';
 import cookie from 'cookie';
-import { isSessionExpired } from './helpers';
-import * as cookies from './cookies';
-import { RefreshTokenExpiredError } from './errors';
+import * as cookies from './cookies.js';
 import type { Either } from '@sveltejs/kit/types/helper';
+import { join } from './path.js';
+import { isSessionExpired } from './helpers.js';
+import { RefreshTokenExpiredError } from './errors.js';
 
 // This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
 const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } = cookies;

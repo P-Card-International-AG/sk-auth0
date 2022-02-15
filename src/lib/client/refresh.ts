@@ -1,7 +1,7 @@
-import { expiresAtCookieName } from '../cookies';
-import { isSessionExpired } from '../helpers';
+import { expiresAtCookieName } from '../cookies.js';
+import { isSessionExpired } from '../helpers.js';
+import { signIn } from './signIn.js';
 import Cookies from 'js-cookie';
-import { signIn } from '.';
 
 let runningRefresh: Promise<Response> | null = null;
 
