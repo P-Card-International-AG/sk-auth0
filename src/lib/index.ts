@@ -1,1 +1,1 @@
-export { Auth as SvelteKitAuth } from './auth';
+export { Auth as SvelteKitAuth } from './auth.js';
