@@ -169,7 +169,7 @@ export class Auth {
 		const { host, searchParams } = event.url;
 		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', host)}`].join(',');
 		let base64State;
-		if (Buffer) {
+		if (typeof Buffer !== 'undefined') {
 			base64State = Buffer.from(state).toString('base64');
 		} else base64State = btoa(state);
 		const nonce = Math.round(Math.random() * 1000).toString(); // TODO: Generate random based on user values
@@ -446,7 +446,7 @@ export class Auth {
 function getExpirationFromToken(token: string): number {
 	const [, payload] = token.split('.');
 	let payloadBuffer;
-	if (Buffer) payloadBuffer = Buffer.from(payload, 'base64');
+	if (typeof Buffer !== 'undefined') payloadBuffer = Buffer.from(payload, 'base64');
 	else payloadBuffer = atob(payload);
 	const { exp } = JSON.parse(payloadBuffer.toString('utf-8'));
 
@@ -461,7 +461,7 @@ function getStateValue(query: URLSearchParams, name: string): string | undefined
 	const stateParam = query.get('state');
 	if (stateParam) {
 		let state;
-		if (Buffer) state = Buffer.from(stateParam, 'base64');
+		if (typeof Buffer !== 'undefined') state = Buffer.from(stateParam, 'base64');
 		else state = atob(stateParam);
 		return state
 			.split(',')
