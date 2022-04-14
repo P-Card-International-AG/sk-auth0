@@ -1,12 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import type { Body, EndpointOutput, Fallthrough } from '@sveltejs/kit/types/endpoint';
+import type { Either } from '@sveltejs/kit/types/helper';
 import type { Handle, RequestEvent } from '@sveltejs/kit/types/hooks';
 import cookie from 'cookie';
 import * as cookies from './cookies.js';
-import type { Either } from '@sveltejs/kit/types/helper';
-import { join } from './path.js';
-import { isSessionExpired } from './helpers.js';
 import { RefreshTokenExpiredError } from './errors.js';
+import { isSessionExpired } from './helpers.js';
+import { join } from './path.js';
 
 // This hack is needed because vite currently has a bug where it cannot resolve imports as keys in object destructuring assignments.
 const { expiresAtCookieName, accessTokenCookieName, refreshTokenCookieName } = cookies;
@@ -168,7 +168,10 @@ export class Auth {
 	private async handleSignin(event: RequestEvent): Promise<EndpointOutput> {
 		const { host, searchParams } = event.url;
 		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', host)}`].join(',');
-		const base64State = Buffer.from(state).toString('base64');
+		let base64State;
+		if (Buffer) {
+			base64State = Buffer.from(state).toString('base64');
+		} else base64State = btoa(state);
 		const nonce = Math.round(Math.random() * 1000).toString(); // TODO: Generate random based on user values
 		const url = this.getAuthorizationUrl(event, base64State, nonce);
 
@@ -442,7 +445,9 @@ export class Auth {
 
 function getExpirationFromToken(token: string): number {
 	const [, payload] = token.split('.');
-	const payloadBuffer = Buffer.from(payload, 'base64');
+	let payloadBuffer;
+	if (Buffer) payloadBuffer = Buffer.from(payload, 'base64');
+	else payloadBuffer = atob(payload);
 	const { exp } = JSON.parse(payloadBuffer.toString('utf-8'));
 
 	if (exp == null) {
@@ -455,7 +460,9 @@ function getExpirationFromToken(token: string): number {
 function getStateValue(query: URLSearchParams, name: string): string | undefined {
 	const stateParam = query.get('state');
 	if (stateParam) {
-		const state = Buffer.from(stateParam, 'base64').toString();
+		let state;
+		if (Buffer) state = Buffer.from(stateParam, 'base64');
+		else state = atob(stateParam);
 		return state
 			.split(',')
 			.find((state) => state.startsWith(`${name}=`))
