@@ -210,7 +210,9 @@ export class Auth {
 
 	private async handleSignout(event: RequestEvent): Promise<EndpointOutput> {
 		const headers = new Headers();
-		this.getDeleteCookieHeaders().forEach((v) => headers.append('set-cookie', v));
+		for (const cookie of this.getDeleteCookieHeaders()) {
+			headers.append('set-cookie', cookie);
+		}
 
 		if (event.request.method === 'POST') {
 			return {
@@ -247,9 +249,9 @@ export class Auth {
 
 		const headers = new Headers();
 		headers.append('Location', redirect);
-		this.getSetCookieHeaders(accessToken, refreshToken, expiresAt).forEach((v) =>
-			headers.append('set-cookie', v)
-		);
+		for (const cookie of this.getSetCookieHeaders(accessToken, refreshToken, expiresAt)) {
+			headers.append('set-cookie', cookie);
+		}
 
 		return {
 			status: 302,
@@ -295,9 +297,9 @@ export class Auth {
 			const expiresAt = getExpirationFromToken(newAccessToken);
 
 			const headers = new Headers();
-			this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt).forEach((v) =>
-				headers.append('set-cookie', v)
-			);
+			for (const cookie of this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt)) {
+				headers.append('set-cookie', cookie);
+			}
 
 			if (event.request.method === 'GET') {
 				const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
@@ -315,7 +317,9 @@ export class Auth {
 		} catch (error) {
 			if (error instanceof RefreshTokenExpiredError) {
 				const headers = new Headers();
-				this.getDeleteCookieHeaders().forEach((v) => headers.append('set-cookie', v));
+				for (const cookie of this.getDeleteCookieHeaders()) {
+					headers.append('set-cookie', cookie);
+				}
 
 				if (event.request.method === 'GET') {
 					const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
