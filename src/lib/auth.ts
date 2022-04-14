@@ -74,9 +74,9 @@ export class Auth {
 		return accessToken != null;
 	}
 
-	public getUrl(path: string, host: string): string {
+	public getUrl(path: string, url: URL): string {
 		const pathname = this.getPath(path);
-		return new URL(pathname, this.getBaseUrl(host)).href;
+		return new URL(pathname, this.getBaseUrl(url)).href;
 	}
 
 	public handle: Handle = ({ event, resolve }) => {
@@ -123,8 +123,8 @@ export class Auth {
 		return expiresAtSeconds;
 	}
 
-	private getBaseUrl(host: string): string {
-		return `http://${host}`;
+	private getBaseUrl(url: URL): string {
+		return `${url.protocol}//${url.host}`;
 	}
 
 	private getPath(path: string): string {
@@ -166,8 +166,10 @@ export class Auth {
 	}
 
 	private async handleSignin(event: RequestEvent): Promise<EndpointOutput> {
-		const { host, searchParams } = event.url;
-		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', host)}`].join(',');
+		const { searchParams } = event.url;
+		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', event.url)}`].join(
+			','
+		);
 		let base64State;
 		if (typeof Buffer !== 'undefined') {
 			base64State = Buffer.from(state).toString('base64');
@@ -199,7 +201,7 @@ export class Auth {
 			client_id: this.config.clientId,
 			audience: this.config.audience,
 			scope: ['offline_access', ...(this.config.extraScopes ?? [])].join(' '),
-			redirect_uri: this.getCallbackUri(event.url.host)
+			redirect_uri: this.getCallbackUri(event.url)
 		};
 
 		const url = `https://${this.config.auth0Domain}/authorize?${new URLSearchParams(data)}`;
@@ -230,7 +232,7 @@ export class Auth {
 	}
 
 	private async handleCallback(event: RequestEvent): Promise<EndpointOutput> {
-		const { searchParams, host } = event.url;
+		const { searchParams } = event.url;
 		const code = searchParams.get('code');
 		if (code == null) {
 			throw new Error('Code not provided');
@@ -238,7 +240,7 @@ export class Auth {
 
 		const redirectUrl = getStateValue(searchParams, 'redirect');
 
-		const tokens = await this.getTokens(code, this.getCallbackUri(host));
+		const tokens = await this.getTokens(code, this.getCallbackUri(event.url));
 		const accessToken = tokens.access_token;
 		const refreshToken = tokens.refresh_token;
 		const expiresAt = getExpirationFromToken(tokens.access_token);
@@ -254,8 +256,8 @@ export class Auth {
 		};
 	}
 
-	private getCallbackUri(host: string): string {
-		return this.getUrl('/callback', host);
+	private getCallbackUri(url: URL): string {
+		return this.getUrl('/callback', url);
 	}
 
 	private async getTokens(code: string, redirectUri: string): Promise<TokenResponse> {
