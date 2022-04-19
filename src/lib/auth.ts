@@ -1,6 +1,4 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import type { Body, EndpointOutput, Fallthrough } from '@sveltejs/kit/types/endpoint';
-import type { Either } from '@sveltejs/kit/types/helper';
 import type { Handle, RequestEvent } from '@sveltejs/kit/types/hooks';
 import cookie from 'cookie';
 import * as cookies from './cookies.js';
@@ -137,9 +135,7 @@ export class Auth {
 		return redirect;
 	}
 
-	private async handleEndpoint(
-		event: RequestEvent
-	): Promise<Either<EndpointOutput<Body>, Fallthrough>> {
+	public async handleEndpoint(event: RequestEvent): Promise<Response> {
 		const path = event.url.pathname;
 
 		if (path === this.getPath('signout')) {
@@ -159,13 +155,12 @@ export class Auth {
 			}
 		}
 
-		return {
-			status: 404,
-			body: 'Not found.'
-		};
+		return new Response(null, {
+			status: 404
+		});
 	}
 
-	private async handleSignin(event: RequestEvent): Promise<EndpointOutput> {
+	private async handleSignin(event: RequestEvent): Promise<Response> {
 		const { searchParams } = event.url;
 		const state = [`redirect=${searchParams.get('redirect') ?? this.getUrl('/', event.url)}`].join(
 			','
@@ -178,19 +173,19 @@ export class Auth {
 		const url = this.getAuthorizationUrl(event, base64State, nonce);
 
 		if (event.request.method === 'POST') {
-			return {
-				body: {
+			return new Response(
+				JSON.stringify({
 					redirect: url
-				}
-			};
+				})
+			);
 		}
 
-		return {
+		return new Response(null, {
 			status: 302,
-			headers: {
+			headers: new Headers({
 				Location: url
-			}
-		};
+			})
+		});
 	}
 
 	private getAuthorizationUrl(event: RequestEvent, state: string, nonce: string): string {
@@ -208,30 +203,37 @@ export class Auth {
 		return url;
 	}
 
-	private async handleSignout(event: RequestEvent): Promise<EndpointOutput> {
+	private async handleSignout(event: RequestEvent): Promise<Response> {
 		const headers = new Headers();
 		for (const cookie of this.getDeleteCookieHeaders()) {
 			headers.append('set-cookie', cookie);
 		}
 
 		if (event.request.method === 'POST') {
-			return {
-				headers,
-				body: {
+			return new Response(
+				JSON.stringify({
 					signout: true
+				}),
+				{
+					headers
 				}
-			};
+			);
 		}
 
 		const redirect = await this.getRedirectUrl(event.url.searchParams.get('redirect') ?? undefined);
-		headers.append('Location', redirect);
-		return {
+		const returnTo = new URL(redirect, this.getBaseUrl(event.url));
+		const auth0LogoutUrl = new URL(`https://${this.config.auth0Domain}/v2/logout`);
+		auth0LogoutUrl.searchParams.append('client_id', this.config.clientId);
+		auth0LogoutUrl.searchParams.append('returnTo', returnTo.href);
+
+		headers.append('Location', auth0LogoutUrl.href);
+		return new Response(null, {
 			status: 302,
 			headers
-		};
+		});
 	}
 
-	private async handleCallback(event: RequestEvent): Promise<EndpointOutput> {
+	private async handleCallback(event: RequestEvent): Promise<Response> {
 		const { searchParams } = event.url;
 		const code = searchParams.get('code');
 		if (code == null) {
@@ -253,10 +255,10 @@ export class Auth {
 			headers.append('set-cookie', cookie);
 		}
 
-		return {
+		return new Response(null, {
 			status: 302,
 			headers
-		};
+		});
 	}
 
 	private getCallbackUri(url: URL): string {
@@ -285,7 +287,7 @@ export class Auth {
 		return await res.json();
 	}
 
-	private async handleRefresh(event: RequestEvent): Promise<EndpointOutput> {
+	private async handleRefresh(event: RequestEvent): Promise<Response> {
 		const { searchParams } = event.url;
 		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(
 			event.request.headers.get('cookie')
@@ -304,15 +306,15 @@ export class Auth {
 			if (event.request.method === 'GET') {
 				const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
 				headers.append('Location', redirect);
-				return {
+				return new Response(null, {
 					status: 302,
 					headers
-				};
+				});
 			} else {
-				return {
+				return new Response(null, {
 					status: 200,
 					headers
-				};
+				});
 			}
 		} catch (error) {
 			if (error instanceof RefreshTokenExpiredError) {
@@ -324,15 +326,15 @@ export class Auth {
 				if (event.request.method === 'GET') {
 					const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
 					headers.append('Location', redirect);
-					return {
+					return new Response(null, {
 						status: 302,
 						headers
-					};
+					});
 				} else {
-					return {
+					return new Response(null, {
 						status: 403,
 						headers
-					};
+					});
 				}
 			} else {
 				throw error;
