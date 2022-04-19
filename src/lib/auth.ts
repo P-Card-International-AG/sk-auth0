@@ -209,11 +209,14 @@ export class Auth {
 	}
 
 	private async handleSignout(event: RequestEvent): Promise<EndpointOutput> {
+		const headers = new Headers();
+		for (const cookie of this.getDeleteCookieHeaders()) {
+			headers.append('set-cookie', cookie);
+		}
+
 		if (event.request.method === 'POST') {
 			return {
-				headers: {
-					'set-cookie': this.getDeleteCookieHeaders()
-				},
+				headers,
 				body: {
 					signout: true
 				}
@@ -221,13 +224,10 @@ export class Auth {
 		}
 
 		const redirect = await this.getRedirectUrl(event.url.searchParams.get('redirect') ?? undefined);
-
+		headers.append('Location', redirect);
 		return {
 			status: 302,
-			headers: {
-				'set-cookie': this.getDeleteCookieHeaders(),
-				Location: redirect
-			}
+			headers
 		};
 	}
 
@@ -247,12 +247,15 @@ export class Auth {
 
 		const redirect = await this.getRedirectUrl(redirectUrl);
 
+		const headers = new Headers();
+		headers.append('Location', redirect);
+		for (const cookie of this.getSetCookieHeaders(accessToken, refreshToken, expiresAt)) {
+			headers.append('set-cookie', cookie);
+		}
+
 		return {
 			status: 302,
-			headers: {
-				'set-cookie': this.getSetCookieHeaders(accessToken, refreshToken, expiresAt),
-				Location: redirect
-			}
+			headers
 		};
 	}
 
@@ -293,40 +296,42 @@ export class Auth {
 			const newRefreshToken = tokens.refresh_token;
 			const expiresAt = getExpirationFromToken(newAccessToken);
 
+			const headers = new Headers();
+			for (const cookie of this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt)) {
+				headers.append('set-cookie', cookie);
+			}
+
 			if (event.request.method === 'GET') {
 				const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
+				headers.append('Location', redirect);
 				return {
 					status: 302,
-					headers: {
-						'set-cookie': this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt),
-						Location: redirect
-					}
+					headers
 				};
 			} else {
 				return {
 					status: 200,
-					headers: {
-						'set-cookie': this.getSetCookieHeaders(newAccessToken, newRefreshToken, expiresAt)
-					}
+					headers
 				};
 			}
 		} catch (error) {
 			if (error instanceof RefreshTokenExpiredError) {
+				const headers = new Headers();
+				for (const cookie of this.getDeleteCookieHeaders()) {
+					headers.append('set-cookie', cookie);
+				}
+
 				if (event.request.method === 'GET') {
 					const redirect = await this.getRedirectUrl(searchParams.get('redirect') ?? undefined);
+					headers.append('Location', redirect);
 					return {
 						status: 302,
-						headers: {
-							'set-cookie': this.getDeleteCookieHeaders(),
-							Location: redirect
-						}
+						headers
 					};
 				} else {
 					return {
 						status: 403,
-						headers: {
-							'set-cookie': this.getDeleteCookieHeaders()
-						}
+						headers
 					};
 				}
 			} else {
