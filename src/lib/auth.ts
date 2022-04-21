@@ -454,10 +454,11 @@ export class Auth {
 
 function getExpirationFromToken(token: string): number {
 	const [, payload] = token.split('.');
-	let payloadBuffer;
-	if (typeof Buffer !== 'undefined') payloadBuffer = Buffer.from(payload, 'base64');
+	let payloadBuffer: string;
+	if (typeof Buffer !== 'undefined')
+		payloadBuffer = Buffer.from(payload, 'base64').toString('utf-8');
 	else payloadBuffer = atob(payload);
-	const { exp } = JSON.parse(payloadBuffer.toString('utf-8'));
+	const { exp } = JSON.parse(payloadBuffer);
 
 	if (exp == null) {
 		throw new Error('exp claim must be specified');
@@ -469,8 +470,8 @@ function getExpirationFromToken(token: string): number {
 function getStateValue(query: URLSearchParams, name: string): string | undefined {
 	const stateParam = query.get('state');
 	if (stateParam) {
-		let state;
-		if (typeof Buffer !== 'undefined') state = Buffer.from(stateParam, 'base64');
+		let state: string;
+		if (typeof Buffer !== 'undefined') state = Buffer.from(stateParam, 'base64').toString('utf-8');
 		else state = atob(stateParam);
 		return state
 			.split(',')
