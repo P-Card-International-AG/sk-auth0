@@ -292,7 +292,7 @@ export class Auth {
 		const cookieHeader = event.request.headers.get('cookie');
 		if (cookieHeader == null) {
 			return new Response(null, {
-				status: 400
+				status: 401
 			});
 		}
 
