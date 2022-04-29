@@ -289,9 +289,14 @@ export class Auth {
 
 	private async handleRefresh(event: RequestEvent): Promise<Response> {
 		const { searchParams } = event.url;
-		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(
-			event.request.headers.get('cookie')
-		);
+		const cookieHeader = event.request.headers.get('cookie');
+		if (cookieHeader == null) {
+			return new Response(null, {
+				status: 401
+			});
+		}
+
+		const { [refreshTokenCookieName]: oldRefreshToken } = cookie.parse(cookieHeader);
 		try {
 			const tokens = await this.getTokensForRefresh(oldRefreshToken);
 			const newAccessToken = tokens.access_token;
