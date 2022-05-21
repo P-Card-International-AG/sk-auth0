@@ -106,3 +106,20 @@ You can sign in and logout like this:
 	<button type="button" on:click={() => signIn()}>Sign in</button>
 {/if}
 ```
+
+### Refreshing the access token
+
+When a user opens your website while his access token is expired, `sk-auth0` will automatically refresh it.
+
+To ensure that the token is also refreshed when the token expires while the user still has the page open, you have to call the `ensureTokenRefreshed` function before every API call your app does. The easiest way to do this is to wrap the `fetch` function with `wrapFetch` like so:
+
+```TS
+import { wrapFetch } from 'sk-auth0/client';
+import { browser } from "$app/env";
+
+// Pass the fetch that you want to wrap. In the load function this is the fetch you get from svelte-kit.
+const wrappedFetch = wrapFetch(fetch, browser);
+
+// You can wrap the fetch in your __layout.svelte and pass it to your GraphQL Client or child components via svelte-kit stuff.
+wrappedFetch("https://example.com").then(response => console.log(response));
+```

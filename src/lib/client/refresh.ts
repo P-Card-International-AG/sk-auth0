@@ -5,7 +5,6 @@ import Cookies from 'js-cookie';
 
 let runningRefresh: Promise<Response> | null = null;
 
-// TODO: Ensure only one refresh is happening at a time
 export async function ensureTokenRefreshed(
 	fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
 	isBrowser: boolean
@@ -38,4 +37,14 @@ export async function ensureTokenRefreshed(
 			throw new Error('Something went wrong while refreshing token!');
 		}
 	}
+}
+
+export function wrapFetch(
+	_fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>,
+	isBrowser: boolean
+): (input: RequestInfo, init?: RequestInit) => Promise<Response> {
+	return async (input: RequestInfo, init?: RequestInit | undefined) => {
+		await ensureTokenRefreshed(_fetch, isBrowser);
+		return await _fetch(input, init);
+	};
 }
